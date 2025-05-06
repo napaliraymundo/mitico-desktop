@@ -61,7 +61,7 @@ class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mitico Data Analysis")
-        self.setGeometry(0, 0, 400, 800)
+        self.setGeometry(0, 0, 100, 2000)
         # self.setFixedSize(400, 800)  # Set fixed size to match the initial dimensions
 
         # Central widget
@@ -88,8 +88,8 @@ class MyApp(QMainWindow):
         main_layout.addWidget(qms_groupbox)     
         
         #LOAD OTHER DATA SECTION
-        self.baldy3_button = QPushButton("Baldy3 Only - Merge Backend")
-        self.baldy2_button = QPushButton("Other Systems - Load Sensor Data")
+        self.baldy3_button = QPushButton("Baldy3: Load Reactor Data")
+        self.baldy2_button = QPushButton("Baldy2: Load Temp Data")
         self.sensor_status = QLabel("Status: ")
 
         sensor_groupbox = QGroupBox("Secondary File Management")
@@ -161,11 +161,15 @@ class MyApp(QMainWindow):
         #SAVE ANALYSIS SECTION
         self.save_csv_button = QPushButton("Save CSV")
         self.save_images_button = QPushButton("Save Plots")
+        self.save_pdf_button = QPushButton("Save PDF Report")
+        self.restart_button = QPushButton("Restart Analysis")
 
-        save_groupbox = QGroupBox("Save Analysis")
+        save_groupbox = QGroupBox("Analysis Management")
         save_layout = QVBoxLayout()
         save_layout.addWidget(self.save_csv_button)
         save_layout.addWidget(self.save_images_button)
+        save_layout.addWidget(self.save_pdf_button)
+        save_layout.addWidget(self.restart_button)
 
         save_groupbox.setLayout(save_layout)
         main_layout.addWidget(save_groupbox)
@@ -175,13 +179,22 @@ class MyApp(QMainWindow):
         central_widget.setLayout(main_layout)
 
         #LINK BUTTON ON CLICK
-        self.select_button.clicked.connect(self.select_file)
+        self.select_button.clicked.connect(self.load_qms_data)
+        # self.baldy2_button.clicked.connect(self.load_reactor_data)
+        # self.baldy3_button.clicked.connect(self.load_temp_data)
+        # self.viewer_button.clicked.connect(self.launch_viewer)
+        # self.capacity_button.clicked.connect(self.run_capacity_analysis)
+        # self.kinetics_button.clicked.connect(self.run_kinetics_analysis)
+        # self.save_csv_button.clicked.connect(self.save_csv)
+        # self.save_images_button.clicked.connect(self.save_plots)
+        # self.save_pdf_button.clicked.connect(self.save_pdf_report)
+        # self.restart_button.clicked.connect(self.restart_analysis)
 
         #OTHER VARIABLES
         self.mdf = []
         self.compound_list = []
 
-    def select_file(self):
+    def load_qms_data(self):
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(
             self,
@@ -194,13 +207,13 @@ class MyApp(QMainWindow):
             try:
                 parser = MassSpecParser(file_name)
                 self.mdf, self.compound_list = parser.parse()
+                self.file_label.setStyleSheet("color: white")
                 self.file_label.setText(f"File: {os.path.basename(file_name)}")
                 self.time_label.setText(f"Datetime: {self.mdf.index[0]}")
                 self.duration_label.setText(f"Duration: {self.mdf.index[-1]-self.mdf.index[0]}")
             except ValueError as e:
+                self.file_label.setStyleSheet("color: red")
                 self.file_label.setText(f"File: {e}")
-                self.time_label.setText(f"Date: {e}")
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MyApp()
