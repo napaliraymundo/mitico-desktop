@@ -27,14 +27,17 @@ class MassSpecParser:
                     self.header_row_number = int(line.split(',')[1]) + 1
                 if i == 2:  # Row 3 contains date and time info
                     second_row = line.split(',')
-                    self.start_datetime = pd.to_datetime(second_row[1] + ' ' + second_row[3])
+                    self.start_datetime = pd.to_datetime(
+                        second_row[1] + ' ' + second_row[3])
                     break
 
         # Read the CSV with the specified header
-        mdf = pd.read_csv(self.filename, header=self.header_row_number, encoding='unicode_escape')
+        mdf = pd.read_csv(
+            self.filename, header=self.header_row_number, encoding='unicode_escape')
 
         # Use ms column to calculate datetime. Set as dataframe index
-        mdf['Datetime'] = self.start_datetime + pd.to_timedelta(mdf['ms'], unit='ms')
+        mdf['Datetime'] = self.start_datetime + \
+            pd.to_timedelta(mdf['ms'], unit='ms')
         mdf = mdf.set_index('Datetime')
 
         # Tweak columns and generate a list of compounds
@@ -43,26 +46,93 @@ class MassSpecParser:
 
         return mdf, compound_list
 
+
 class BackendParser:
-    def __init__(self, mdf):
+    def __init__(self, mdf, start_datetime, duration):
         self.mdf = mdf
+        self.start_datetime = start_datetime
+        self.duration = duration
+
     def parse(self):
-        return
-    
+        if self.start_datetime == 'Start Date: ':
+            raise ValueError('Please select valid QMS file first')
+        else:
+            folder_path = QFileDialog.getExistingDirectory(
+                None,"Select Folder","")
+            if folder_path:
+                # bdf, reactor_parameters, df, cycle_times_df, cycle_numbers
+                # Select backend files corresponding to the dates in the selected mass spec file
+                dates_to_pull = np.unique(self.mdf.index.date)
+                dates_to_pull = np.insert(dates_to_pull,0,
+                                            dates_to_pull.min() - pd.Timedelta(days=1))
+                backend_filenames = \
+                [f"data_{date.strftime('%Y-%m-%d')}.csv" for date in dates_to_pull]
+
+                # Concatenate all requisite files and clean columns
+                try:
+                    backend_dataframes = \
+                        [pd.read_csv(os.path.join(folder_path,f)) for f in backend_filenames]
+                except FileNotFoundError as e:
+                    raise ValueError('Matching CSV Not Found')
+                bdf = pd.concat(backend_dataframes)
+                bdf['Datetime'] = \
+                    pd.to_datetime(bdf['Timestamp'], format="%m/%d/%Y %I:%M:%S %p")
+                bdf = bdf.set_index('Datetime')
+
+                bdf = bdf.drop(['Timestamp','MFC1.ID','MFC2.ID','MFC3.ID','MFC4.ID','MFC5.ID']
+                                , axis=1)
+
+                # MFC's are a little buggy. MFC2 currently going NaN during sorption swap
+                bdf['MFC1.Massflow'] = bdf['MFC1.Massflow'].fillna(0)
+                bdf['MFC2.Massflow'] = bdf['MFC2.Massflow'].fillna(0)
+                bdf['MFC3.Massflow'] = bdf['MFC3.Massflow'].fillna(0)
+                bdf['MFC4.Massflow'] = bdf['MFC4.Massflow'].fillna(0)
+
+                # Generate a list of parameters
+                reactor_parameters = list(bdf.columns)
+
+                # Merges backend data (~5 seconds) to mass-spec points (~30 seconds)
+                # Correlation tolerance is 10 seconds
+                df = pd.merge_asof(self.mdf.sort_index(), bdf.sort_index(), on='Datetime',
+                                    direction='nearest', tolerance=pd.Timedelta(seconds=10))
+                df = df.set_index('Datetime')
+
+                # Create a df that deals with cycle-specific values
+                # Get unique cycle numbers
+                cycle_numbers = df['No Completed Cycles'].dropna().unique()
+
+                cycle_times = []
+                for cycle_number in cycle_numbers:
+                    # Filter the DataFrame for the current cycle number
+                    cycle_data = df[df['No Completed Cycles'] == cycle_number]
+
+                    # Get the start and end times for the current cycle
+                    start_time = cycle_data.index.min()
+                    end_time = cycle_data.index.max()
+                    cycle_times.append({'Cycle': cycle_number,
+                                        'Start': start_time, 'End': end_time})
+
+                # Convert the list of dictionaries to a DataFrame
+                cycle_times_df = pd.DataFrame(cycle_times)
+                return df, reactor_parameters, cycle_times_df, cycle_times
+
+
 class dataViewer(QMainWindow):
     def __init__(self, df, parameters, compounds, other):
         super().__init__()
         self.setWindowTitle("Data Viewer")
         self.setGeometry(400, 0, 800, 800)
+
     def something_else(self):
         return
+
 
 class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mitico Data Analysis")
-        self.setGeometry(0, 0, 100, 2000)
-        # self.setFixedSize(400, 800)  # Set fixed size to match the initial dimensions
+        self.setGeometry(0, 0, 300, 2000)
+        self.setFixedWidth(300)
 
         # Central widget
         central_widget = QWidget()
@@ -71,7 +141,7 @@ class MyApp(QMainWindow):
         # Main layout
         main_layout = QVBoxLayout()
 
-        #LOAD QMS SECTION
+        # LOAD QMS SECTION
         self.select_button = QPushButton("Load QMS Data")
         self.file_label = QLabel("File: ")
         self.time_label = QLabel("Start Date: ")
@@ -85,23 +155,23 @@ class MyApp(QMainWindow):
 
         qms_groupbox = QGroupBox("QMS File Management")
         qms_groupbox.setLayout(qms_groupbox_layout)
-        main_layout.addWidget(qms_groupbox)     
-        
-        #LOAD OTHER DATA SECTION
+        main_layout.addWidget(qms_groupbox)
+
+        # LOAD OTHER DATA SECTION
         self.baldy3_button = QPushButton("Baldy3: Load Reactor Data")
         self.baldy2_button = QPushButton("Baldy2: Load Temp Data")
-        self.sensor_status = QLabel("Status: ")
+        self.secondary_status = QLabel("Status: ")
 
         sensor_groupbox = QGroupBox("Secondary File Management")
         sensor_groupbox_layout = QVBoxLayout()
         sensor_groupbox_layout.addWidget(self.baldy3_button)
         sensor_groupbox_layout.addWidget(self.baldy2_button)
-        sensor_groupbox_layout.addWidget(self.sensor_status)
-        
+        sensor_groupbox_layout.addWidget(self.secondary_status)
+
         sensor_groupbox.setLayout(sensor_groupbox_layout)
         main_layout.addWidget(sensor_groupbox)
 
-        #RUN PARAMETERS SECTION
+        # RUN PARAMETERS SECTION
         self.sorbent_mass_input = QLineEdit()
         self.reactor_diameter_input = QLineEdit()
         self.bulk_density_input = QLineEdit()
@@ -144,7 +214,7 @@ class MyApp(QMainWindow):
         run_parameters_groupbox.setLayout(run_parameters_layout)
         main_layout.addWidget(run_parameters_groupbox)
 
-        #RUN ANALYSIS SECTION
+        # RUN ANALYSIS SECTION
         self.viewer_button = QPushButton("Launch Viewer")
         self.capacity_button = QPushButton("Run Capacity Analysis")
         self.kinetics_button = QPushButton("Run Kinetics Analysis")
@@ -158,7 +228,7 @@ class MyApp(QMainWindow):
         analysis_groupbox.setLayout(analysis_layout)
         main_layout.addWidget(analysis_groupbox)
 
-        #SAVE ANALYSIS SECTION
+        # SAVE ANALYSIS SECTION
         self.save_csv_button = QPushButton("Save CSV")
         self.save_images_button = QPushButton("Save Plots")
         self.save_pdf_button = QPushButton("Save PDF Report")
@@ -174,14 +244,14 @@ class MyApp(QMainWindow):
         save_groupbox.setLayout(save_layout)
         main_layout.addWidget(save_groupbox)
 
-        #FINALIZE LAYOUT
+        # FINALIZE LAYOUT
         main_layout.addStretch()
         central_widget.setLayout(main_layout)
 
-        #LINK BUTTON ON CLICK
+        # LINK BUTTON ON CLICK
         self.select_button.clicked.connect(self.load_qms_data)
-        # self.baldy2_button.clicked.connect(self.load_reactor_data)
-        # self.baldy3_button.clicked.connect(self.load_temp_data)
+        self.baldy3_button.clicked.connect(self.load_reactor_data)
+        # self.baldy2_button.clicked.connect(self.load_temp_data)
         # self.viewer_button.clicked.connect(self.launch_viewer)
         # self.capacity_button.clicked.connect(self.run_capacity_analysis)
         # self.kinetics_button.clicked.connect(self.run_kinetics_analysis)
@@ -190,7 +260,7 @@ class MyApp(QMainWindow):
         # self.save_pdf_button.clicked.connect(self.save_pdf_report)
         # self.restart_button.clicked.connect(self.restart_analysis)
 
-        #OTHER VARIABLES
+        # OTHER VARIABLES
         self.mdf = []
         self.compound_list = []
 
@@ -209,11 +279,31 @@ class MyApp(QMainWindow):
                 self.mdf, self.compound_list = parser.parse()
                 self.file_label.setStyleSheet("color: white")
                 self.file_label.setText(f"File: {os.path.basename(file_name)}")
+                self.file_label.setToolTip(file_name)
                 self.time_label.setText(f"Datetime: {self.mdf.index[0]}")
-                self.duration_label.setText(f"Duration: {self.mdf.index[-1]-self.mdf.index[0]}")
+                self.duration_label.setText(
+                    f"Duration: {self.mdf.index[-1]-self.mdf.index[0]}")
+                self.secondary_status.setStyleSheet("color: white")
+                self.secondary_status.setText("Status: ")
             except ValueError as e:
                 self.file_label.setStyleSheet("color: red")
                 self.file_label.setText(f"File: {e}")
+
+    def load_reactor_data(self):
+        try:
+            backend_parser = BackendParser(
+                self.mdf, self.time_label.text(), self.duration_label.text())
+            self.mdf, reactor_parameters, cycle_times_df, cycle_times = backend_parser.parse()
+            self.secondary_status.setStyleSheet("color: white")
+            self.secondary_status.setText(f'Status: Reactor data merged')
+            self.baldy2_button.setEnabled(False)
+            self.baldy2_button.setStyleSheet("color: grey")
+            print(reactor_parameters)
+        except ValueError as e:
+            self.secondary_status.setStyleSheet("color: red")
+            self.secondary_status.setText(f'Status: {e}')
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MyApp()
