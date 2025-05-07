@@ -11,29 +11,6 @@ import csv
 from io import StringIO
 from DataViewer import DataViewer
 from FileParsers import MassSpecParser, BackendParser
-from PyQt5.QtGui import QPalette, QColor
-from PyQt5.QtCore import Qt
-
-def apply_dark_theme(app):
-    palette = QPalette()
-
-    # Set dark background and light text
-    palette.setColor(QPalette.Window, QColor(30, 30, 30))
-    palette.setColor(QPalette.WindowText, Qt.white)
-    palette.setColor(QPalette.Base, QColor(20, 20, 20))
-    palette.setColor(QPalette.AlternateBase, QColor(40, 40, 40))
-    palette.setColor(QPalette.ToolTipBase, Qt.white)
-    palette.setColor(QPalette.ToolTipText, Qt.white)
-    palette.setColor(QPalette.Text, Qt.white)
-    palette.setColor(QPalette.Button, QColor(45, 45, 45))
-    palette.setColor(QPalette.ButtonText, Qt.white)
-    palette.setColor(QPalette.BrightText, Qt.red)
-
-    palette.setColor(QPalette.Highlight, QColor(64, 128, 255))
-    palette.setColor(QPalette.HighlightedText, Qt.black)
-
-    app.setPalette(palette)
-
             
 class MyApp(QMainWindow):
     def __init__(self):
@@ -193,13 +170,13 @@ class MyApp(QMainWindow):
             try:
                 parser = MassSpecParser(file_name)
                 self.mdf, self.compound_list = parser.parse()
-                self.file_label.setStyleSheet("color: white")
+                self.file_label.setStyleSheet("")
                 self.file_label.setText(f"File: {os.path.basename(file_name)}")
                 self.file_label.setToolTip(file_name)
                 self.time_label.setText(f"Datetime: {self.mdf.index[0]}")
                 self.duration_label.setText(
                     f"Duration: {self.mdf.index[-1]-self.mdf.index[0]}")
-                self.secondary_status.setStyleSheet("color: white")
+                self.secondary_status.setStyleSheet("")
                 self.secondary_status.setText("Status: ")
                 self.run_parameters_groupbox.setEnabled(True)
                 self.baldy2_button.setEnabled(True)
@@ -214,7 +191,7 @@ class MyApp(QMainWindow):
             backend_parser = BackendParser(
                 self.mdf, self.time_label.text(), self.duration_label.text())
             self.mdf, self.reactor_parameters, self.cycle_times_df, self.cycle_times = backend_parser.parse()
-            self.secondary_status.setStyleSheet("color: white")
+            self.secondary_status.setStyleSheet("")
             self.secondary_status.setText(f'Status: Reactor data merged')
             self.baldy2_button.setEnabled(False)
             self.baldy2_button.setStyleSheet("color: grey")
@@ -233,7 +210,6 @@ class MyApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    apply_dark_theme(app)
     window = MyApp()
     window.show()
     sys.exit(app.exec_())
