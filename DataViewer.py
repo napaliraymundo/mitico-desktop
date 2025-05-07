@@ -21,6 +21,7 @@ class DataViewer(QMainWindow):
         self.setWindowTitle("Data Viewer")
         screen_geometry = QApplication.desktop().screenGeometry()
         self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
 
         # === Compute scaling factors for all numeric columns ===
         self.scaling_factors = self._calculate_scaling_factors()
