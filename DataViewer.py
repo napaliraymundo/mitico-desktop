@@ -93,7 +93,6 @@ class DataViewer(QMainWindow):
     def update_plot(self):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        self._set_dark_theme(ax)
 
         use_scaling = self.scaling_checkbox.isChecked()
 
@@ -112,21 +111,8 @@ class DataViewer(QMainWindow):
                     ax.plot(self.df.index, self.df[entry], label=entry)
 
         # Embedded title and label
-        ax.text(0.5, -0.1, "Time", transform=ax.transAxes,
-                fontsize=10, color='white', ha='center')
-
         ax.legend()
         ax.grid(True, color="gray", linestyle="--")
 
         self.figure.tight_layout(pad=1)
         self.canvas.draw()
-
-    def _set_dark_theme(self, ax):
-        ax.set_facecolor("#1e1e1e")
-        ax.figure.set_facecolor("#1e1e1e")
-        ax.tick_params(colors='white')
-        for spine in ax.spines.values():
-            spine.set_color('white')
-        ax.yaxis.label.set_color('white')
-        ax.xaxis.label.set_color('white')
-        ax.title.set_color('white')
