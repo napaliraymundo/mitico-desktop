@@ -10,7 +10,9 @@ import numpy as np
 import csv
 from io import StringIO
 from DataViewer import DataViewer
+from CapacityAnalysis import CapacityAnalysis
 from FileParsers import MassSpecParser, BackendParser
+from datetime import datetime
             
 class MyApp(QMainWindow):
     def __init__(self):
@@ -44,7 +46,7 @@ class MyApp(QMainWindow):
         main_layout.addWidget(qms_groupbox)
 
         # LOAD OTHER DATA SECTION
-        self.baldy3_button = QPushButton("Baldy3: Load Reactor Data")
+        self.baldy3_button = QPushButton("Baldy3: Load Data Folder")
         self.baldy3_button.setEnabled(False)
         self.baldy2_button = QPushButton("Baldy2: Load Temp Data")
         self.baldy2_button.setEnabled(False)
@@ -65,6 +67,7 @@ class MyApp(QMainWindow):
         self.bulk_density_input = QLineEdit()
         self.packing_factor_input = QLineEdit()
         self.qms_input_ratio_input = QLineEdit()
+        self.save_parameters_button = QPushButton("Save Run Parameters")
 
         self.run_parameters_groupbox = QGroupBox("Run Parameters")
         run_parameters_layout = QVBoxLayout()
@@ -98,6 +101,7 @@ class MyApp(QMainWindow):
         qms_input_ratio_layout.addWidget(qms_input_ratio_label)
         qms_input_ratio_layout.addWidget(self.qms_input_ratio_input)
         run_parameters_layout.addLayout(qms_input_ratio_layout)
+        run_parameters_layout.addWidget(self.save_parameters_button)
 
         self.run_parameters_groupbox.setLayout(run_parameters_layout)
         self.run_parameters_groupbox.setEnabled(False)
@@ -107,7 +111,9 @@ class MyApp(QMainWindow):
         self.viewer_button = QPushButton("Launch Viewer")
         self.viewer_button.setEnabled(False)
         self.capacity_button = QPushButton("Run Capacity Analysis")
+        self.capacity_button.setEnabled(False)
         self.kinetics_button = QPushButton("Run Kinetics Analysis")
+        self.kinetics_button.setEnabled(False)
 
         analysis_groupbox = QGroupBox("Execute Analysis")
         analysis_layout = QVBoxLayout()
@@ -120,9 +126,13 @@ class MyApp(QMainWindow):
 
         # SAVE ANALYSIS SECTION
         self.save_csv_button = QPushButton("Save CSV")
+        self.save_csv_button.setEnabled(False)
         self.save_images_button = QPushButton("Save Plots")
+        self.save_images_button.setEnabled(False)
         self.save_pdf_button = QPushButton("Save PDF Report")
+        self.save_pdf_button.setEnabled(False)
         self.restart_button = QPushButton("Restart Analysis")
+        self.restart_button.setEnabled(False)
 
         save_groupbox = QGroupBox("Analysis Management")
         save_layout = QVBoxLayout()
@@ -143,12 +153,18 @@ class MyApp(QMainWindow):
         self.baldy3_button.clicked.connect(self.load_reactor_data)
         # self.baldy2_button.clicked.connect(self.load_temp_data)
         self.viewer_button.clicked.connect(self.launch_viewer)
-        # self.capacity_button.clicked.connect(self.run_capacity_analysis)
+        self.sorbent_mass_input.textChanged.connect(self.enable_save_params)
+        # self.reactor_diameter_input = QLineEdit()
+        # self.bulk_density_input = QLineEdit()
+        # self.packing_factor_input = QLineEdit()
+        # self.qms_input_ratio_input = QLineEdit()
+        self.capacity_button.clicked.connect(self.launch_capacity)
         # self.kinetics_button.clicked.connect(self.run_kinetics_analysis)
         # self.save_csv_button.clicked.connect(self.save_csv)
         # self.save_images_button.clicked.connect(self.save_plots)
         # self.save_pdf_button.clicked.connect(self.save_pdf_report)
-        # self.restart_button.clicked.connect(self.restart_analysis)
+        self.restart_button.clicked.connect(self.restart_analysis)
+        self.save_parameters_button.clicked.connect(self.save_run_parameters)
 
         # OTHER VARIABLES
         self.mdf = []
@@ -156,6 +172,64 @@ class MyApp(QMainWindow):
         self.reactor_parameters = []
         self.other_parameters = []
         self.viewer_instance = None  # Add a reference to the viewer instance
+        self.capacity_instance = None
+        self.kinetics_instance = None
+
+
+    def load_run_parameters(self, file_name):
+        """Load run parameters from a CSV file indexed by filename."""
+        csv_file = "run_parameters.csv"
+        print(f"loading {file_name}")
+        try:
+            if os.path.isfile(csv_file):
+                with open(csv_file, mode="r") as file:
+                    reader = csv.DictReader(file)
+                    for row in reader:
+                        if row["Filename"] == file_name:
+                            self.sorbent_mass_input.setText(row["Sorbent Mass (g)"])
+                            self.reactor_diameter_input.setText(row["Reactor Diameter (in)"])
+                            self.bulk_density_input.setText(row["Sorbent Bulk Density (g/mL)"])
+                            self.packing_factor_input.setText(row["Packing Factor"])
+                            self.qms_input_ratio_input.setText(row["QMS Input Ratio (baseline)"])
+            self.save_parameters_button.setEnabled(False)
+        except Exception as e:
+            print(f"Error loading run parameters: {e}")
+
+
+    def save_run_parameters(self):
+        file_name = self.file_label.text()[6:]
+        """Save run parameters to a CSV file indexed by filename."""
+        parameters = {
+            "Save Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Sorbent Mass (g)": self.sorbent_mass_input.text(),
+            "Reactor Diameter (in)": self.reactor_diameter_input.text(),
+            "Sorbent Bulk Density (g/mL)": self.bulk_density_input.text(),
+            "Packing Factor": self.packing_factor_input.text(),
+            "QMS Input Ratio (baseline)": self.qms_input_ratio_input.text()
+        }
+
+        csv_file = "run_parameters.csv"
+        try:
+            # Check if the file exists
+            file_exists = os.path.isfile(csv_file)
+
+            with open(csv_file, mode="a", newline="") as file:
+                writer = csv.writer(file)
+
+                # Write header if the file is new
+                if not file_exists:
+                    writer.writerow(["Filename"] + list(parameters.keys()))
+
+                # Write the parameters
+                writer.writerow([file_name] + list(parameters.values()))
+            self.save_parameters_button.setEnabled(False)
+        except Exception as e:
+            print(f"Error saving run parameters: {e}")
+
+    
+    def enable_save_params(self):
+        self.save_parameters_button.setEnabled(True)
+
 
     def load_qms_data(self):
         options = QFileDialog.Options()
@@ -182,19 +256,23 @@ class MyApp(QMainWindow):
                 self.baldy2_button.setEnabled(True)
                 self.baldy3_button.setEnabled(True)
                 self.viewer_button.setEnabled(True)
+                self.restart_button.setEnabled(True)
+                self.load_run_parameters(os.path.basename(file_name))
             except ValueError as e:
                 self.file_label.setStyleSheet("color: red")
                 self.file_label.setText(f"File: {e}")
 
     def load_reactor_data(self):
+        self.secondary_status.setText('Status: Loading')
         try:
             backend_parser = BackendParser(
                 self.mdf, self.time_label.text(), self.duration_label.text())
             self.mdf, self.reactor_parameters, self.cycle_times_df, self.cycle_times = backend_parser.parse()
             self.secondary_status.setStyleSheet("")
-            self.secondary_status.setText(f'Status: Reactor data merged')
+            self.secondary_status.setText('Status: Reactor data merged')
             self.baldy2_button.setEnabled(False)
             self.baldy2_button.setStyleSheet("color: grey")
+            self.capacity_button.setEnabled(True)
         except ValueError as e:
             self.secondary_status.setStyleSheet("color: red")
             self.secondary_status.setText(f'Status: {e}')
@@ -206,6 +284,24 @@ class MyApp(QMainWindow):
         else:
             self.viewer_instance.raise_()
             self.viewer_instance.activateWindow()
+
+    def launch_capacity(self):
+        if self.capacity_instance is None or not self.capacity_instance.isVisible():
+            self.capacity_instance = CapacityAnalysis(self.mdf, self.cycle_times_df, self.file_label.text()[6:])
+            self.capacity_instance.show()
+        else:
+            self.capacity_instance.raise_()
+            self.capacity_instance.activateWindow()
+
+    def save_csv(self):
+        """Save the current run parameters when saving CSV."""
+        if self.file_label.text().startswith("File: "):
+            file_name = self.file_label.text().replace("File: ", "").strip()
+            self.save_run_parameters(file_name)
+
+    def restart_analysis(self):
+        QApplication.quit()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 
 if __name__ == "__main__":

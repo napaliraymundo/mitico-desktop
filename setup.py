@@ -1,6 +1,6 @@
 from setuptools import setup
 
-APP = ['mitico-analysis.py']
+APP = ['Analysis.py']
 OPTIONS = {
     'argv_emulation': False, # no terminal
     'iconfile': 'app.icns',
