@@ -1,11 +1,5 @@
-import sys
 import os
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QPushButton, QLabel,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy, QGroupBox, QLineEdit
-)
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import csv
 from io import StringIO

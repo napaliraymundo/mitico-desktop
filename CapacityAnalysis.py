@@ -1,13 +1,10 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QListWidget, QListWidgetItem, QVBoxLayout, QHBoxLayout, QLabel, QApplication, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel, QApplication
 from PyQt5.QtCore import Qt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import math
-import os
 import csv
 
 class CapacityAnalysis(QMainWindow):

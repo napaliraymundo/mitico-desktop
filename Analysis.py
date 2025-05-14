@@ -8,7 +8,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import csv
-from io import StringIO
 from DataViewer import DataViewer
 from CapacityAnalysis import CapacityAnalysis
 from FileParsers import MassSpecParser, BackendParser
@@ -162,7 +161,7 @@ class MyApp(QMainWindow):
         # LINK BUTTON ON CLICK
         self.select_button.clicked.connect(self.load_qms_data)
         self.baldy3_button.clicked.connect(self.load_reactor_data)
-        # self.baldy2_button.clicked.connect(self.load_temp_data)
+        self.baldy2_button.clicked.connect(self.load_temp_data)
         self.viewer_button.clicked.connect(self.toggle_viewer)
         self.sorbent_mass_input.textChanged.connect(self.enable_save_params)
         # self.reactor_diameter_input = QLineEdit()
@@ -278,6 +277,30 @@ class MyApp(QMainWindow):
                 backend_parser = BackendParser(
                     self.mdf, self.time_label.text(), self.duration_label.text(), self.file_label.text()[6:], folder_path)
                 self.mdf, self.reactor_parameters, self.other_parameters, self.cycle_times_df = backend_parser.parse()
+                self.secondary_status.setStyleSheet("")
+                self.secondary_status.setText('Status: Reactor data merged')
+                self.baldy2_button.setEnabled(False)
+                self.baldy2_button.setStyleSheet("color: grey")
+                self.capacity_button.setEnabled(True)
+            except ValueError as e:
+                self.secondary_status.setStyleSheet("color: red")
+                self.secondary_status.setText(f'Status: {e}')
+        else: self.secondary_status.setText("Status: No Secondary File Loaded")
+
+    def load_temp__data(self):
+        self.secondary_status.setText('Status: Loading')
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open CSV File",
+            "",
+            "CSV Files (*.csv)",
+            options=options
+        )
+        if file_name:
+            try:
+                baldy2_parser = Baldy2Parser(self.mdf)
+                mdf = baldy2_parser.parse()
                 self.secondary_status.setStyleSheet("")
                 self.secondary_status.setText('Status: Reactor data merged')
                 self.baldy2_button.setEnabled(False)

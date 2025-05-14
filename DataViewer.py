@@ -1,11 +1,9 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QLabel, QListWidget, QVBoxLayout,
-    QHBoxLayout, QListWidgetItem, QSizePolicy, QApplication, QCheckBox
+    QHBoxLayout, QSizePolicy, QApplication, QCheckBox
 )
 from PyQt5.QtCore import Qt
-
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import numpy as np
 import pandas as pd
