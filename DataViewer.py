@@ -82,6 +82,7 @@ class DataViewer(QMainWindow):
     def _calculate_scaling_factors(self):
         # Only describe numeric columns
         describe_df = self.df.select_dtypes(include=[np.number]).describe()
+        describe_df = describe_df.drop(columns=["TimeDiff"], errors="ignore")
         scaling = (describe_df.loc['max']).apply(
             lambda x: 10**(np.floor(np.log10(abs(x)))) if x != 0 else 1
         ).fillna(1)

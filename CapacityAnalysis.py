@@ -53,8 +53,6 @@ class CapacityAnalysis(QMainWindow):
         self.cycle_list = QListWidget()
         self.cycle_list.setSelectionMode(QListWidget.MultiSelection)
         self.cycle_list.addItems([str(int(c)) for c in self.cycle_numbers])
-        for i in range(self.cycle_list.count()):
-            self.cycle_list.item(i).setSelected(True)
         control_panel.addWidget(QLabel("Cycle Numbers to Plot"))
         control_panel.addWidget(self.cycle_list)
 
@@ -103,23 +101,8 @@ class CapacityAnalysis(QMainWindow):
             raise ValueError(f"No run parameters found for {file_name}")
 
     def perform_analysis(self):
-        self.calculate_secondary()
         self.calculate_sorption()
         self.update_plots()
-
-    def calculate_secondary(self):
-        df = self.df
-        sccm_to_molar = (1/60) * (1/22414)
-        reactor_diameter_m = self.reactor_diameter_in * .0254
-        df['TimeDiff'] = df.index.diff()
-        df['flue_flow_in[sccm/s]'] = df['MFC1.Massflow'] + df['MFC2.Massflow'] + df['MFC3.Massflow'] + df['MFC4.Massflow']
-        df['flue_flow_in[mol/s]'] = df['flue_flow_in[sccm/s]'] * sccm_to_molar
-        df['CO2_flow_in[mol/s]'] = df['MFC4.Massflow'] * sccm_to_molar
-        df['CO2 / N2'] = df['Carbon dioxide'] / df['Nitrogen']
-        correction = self.co2_ratio_input / self.mass_spec_co2_ratio
-        df['yCO2'] = df['CO2 / N2'] * correction
-        df['CO2_flow_out[mol/s]'] = df['yCO2'] * df['flue_flow_in[mol/s]']
-        df['CO2absorbed[mol]'] = (df['CO2_flow_in[mol/s]'] - df['CO2_flow_out[mol/s]']) * df['TimeDiff'].dt.total_seconds()
 
     def calculate_sorption(self):
         df = self.df
