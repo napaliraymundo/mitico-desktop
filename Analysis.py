@@ -161,7 +161,7 @@ class MyApp(QMainWindow):
         # LINK BUTTON ON CLICK
         self.select_button.clicked.connect(self.load_qms_data)
         self.baldy3_button.clicked.connect(self.load_reactor_data)
-        self.baldy2_button.clicked.connect(self.load_temp_data)
+        # self.baldy2_button.clicked.connect(self.load_temp_data)
         self.viewer_button.clicked.connect(self.toggle_viewer)
         self.sorbent_mass_input.textChanged.connect(self.enable_save_params)
         # self.reactor_diameter_input = QLineEdit()
