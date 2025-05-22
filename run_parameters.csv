@@ -1,5 +1,6 @@
-Filename,Save Timestamp,Sorbent Mass (g),Reactor Diameter (in),Sorbent Bulk Density (g/mL),Packing Factor,QMS Input Ratio (baseline)
-08.27.24 CS191 20.477g_30minHydration_C2.csv,2025-05-08 15:24:18,1,2,3,4,5
-EuroSupport 1924 Size 4 14.41g.csv,2025-05-08 15:38:28,14.41,0.8,0.694,0.55,0.0676
-08.27.24 CS191 20.477g_30minHydration_C2.csv,2025-05-08 15:41:31,1,2,3,4,5
-08.27.24 CS191 20.477g_30minHydration_C2.csv,2025-05-08 15:41:36,1,2,3,4,5
+Filename,Save Timestamp,Sorbent Mass [g],Reactor Diameter [in],Sorbent Bulk Density [g/mL],Input Flow Rate [SCCM],Packing Factor,Reference Gas,Reactor Input Ratio (CO2:N2),QMS Input Ratio (baseline),Sorption Start (%),Sorption End (%)
+EuroSupport 1924 Size 4 14.41g.csv,2025-05-21 18:39:53,14.41,0.8,.697,150,0.55,Carbon dioxide,.0833,.0767,.5,9
+08.27.24 CS191 20.477g_30minHydration_C2.csv,2025-05-21 19:09:09,20.477,0.8,0.74,150,0.55,Argon,0.1,0.0738,0.5,9
+EuroSupport 1924 Size 4 14.41g.csv,2025-05-22 12:29:04,14.41,0.8,.697,150,0.55,Nitrogen,.0833,.0767,.5,9
+EuroSupport 1924 Size 4 14.41g.csv,2025-05-22 12:34:54,14.41,0.8,.697,150,0.55,Nitrogen,.0833,.0767,.5,9
+EuroSupport 1924 Size 4 14.41g.csv,2025-05-22 15:44:58,14.41,0.8,.697,150,0.55,Nitrogen,.0833,.0767,.5,6

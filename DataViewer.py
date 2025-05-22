@@ -9,14 +9,11 @@ import numpy as np
 import pandas as pd
 
 class DataViewer(QMainWindow):
-    def __init__(self, df, parameters, compounds, other):
+    def __init__(self, analysis):
         super().__init__()
-        self.df = df
-        self.parameters = parameters
-        self.compounds = compounds
-        self.other = other
+        self.analysis = analysis
 
-        self.setWindowTitle("Data Viewer")
+        self.setWindowTitle("Graph Run")
         screen_geometry = QApplication.desktop().screenGeometry()
         self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
         self.setWindowFlags(self.windowFlags() | Qt.Window)
@@ -32,7 +29,7 @@ class DataViewer(QMainWindow):
 
         # Left panel: Plot + Toolbar
         plot_panel = QVBoxLayout()
-        self.figure = Figure(figsize=(8, 6), facecolor="#121212")
+        self.figure = Figure(figsize=(8, 6))
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.toolbar = NavigationToolbar(self.canvas, self)
@@ -46,19 +43,24 @@ class DataViewer(QMainWindow):
 
         self.compound_list = QListWidget()
         self.compound_list.setSelectionMode(QListWidget.MultiSelection)
-        self.compound_list.addItems(self.compounds)
+        # Only add compounds that are not all NaN
+        for item in self.analysis.compound_list:
+            if self.analysis.mdf[item].notna().any():
+                self.compound_list.addItem(item)
+        # Enable (select) all compounds by default
+        self.compound_list.selectAll()
         control_panel.addWidget(QLabel("Compounds"))
         control_panel.addWidget(self.compound_list)
 
         self.reactor_param_list = QListWidget()
         self.reactor_param_list.setSelectionMode(QListWidget.MultiSelection)
-        self.reactor_param_list.addItems(self.parameters)
+        self.reactor_param_list.addItems(self.analysis.reactor_parameters)
         control_panel.addWidget(QLabel("Reactor Parameters"))
         control_panel.addWidget(self.reactor_param_list)
 
         self.other_param_list = QListWidget()
         self.other_param_list.setSelectionMode(QListWidget.MultiSelection)
-        self.other_param_list.addItems(self.other)
+        self.other_param_list.addItems(self.analysis.other_parameters)
         control_panel.addWidget(QLabel("Other Parameters"))
         control_panel.addWidget(self.other_param_list)
 
@@ -79,7 +81,7 @@ class DataViewer(QMainWindow):
 
     def _calculate_scaling_factors(self):
         # Only describe numeric columns
-        describe_df = self.df.select_dtypes(include=[np.number]).describe()
+        describe_df = self.analysis.mdf.select_dtypes(include=[np.number]).describe()
         describe_df = describe_df.drop(columns=["TimeDiff"], errors="ignore")
         scaling = (describe_df.loc['max']).apply(
             lambda x: 10**(np.floor(np.log10(abs(x)))) if x != 0 else 1
@@ -89,10 +91,37 @@ class DataViewer(QMainWindow):
     def get_selected_items(self, widget):
         return [item.text() for item in widget.selectedItems() if item.text() != "None"]
 
+    def update_dropdowns(self):
+        # Block signals to avoid recursion when reloading lists
+        self.compound_list.blockSignals(True)
+        self.reactor_param_list.blockSignals(True)
+        self.other_param_list.blockSignals(True)
+
+        # Reload compound list
+        self.compound_list.clear()
+        for item in self.analysis.compound_list:
+            if self.analysis.mdf[item].notna().any():
+                self.compound_list.addItem(item)
+        self.compound_list.selectAll()
+
+        # Reload reactor param list
+        self.reactor_param_list.clear()
+        self.reactor_param_list.addItems(self.analysis.reactor_parameters)
+
+        # Reload other param list
+        self.other_param_list.clear()
+        self.other_param_list.addItems(self.analysis.other_parameters)
+
+        # Re-enable signals
+        self.compound_list.blockSignals(False)
+        self.reactor_param_list.blockSignals(False)
+        self.other_param_list.blockSignals(False)
+
+
     def update_plot(self):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-
+        
         use_scaling = self.scaling_checkbox.isChecked()
 
         selected_compounds = self.get_selected_items(self.compound_list)
@@ -101,13 +130,23 @@ class DataViewer(QMainWindow):
         all_selected = selected_compounds + selected_reactor + selected_other
 
         for entry in all_selected:
-            if entry in self.df.columns:
+            if entry in self.analysis.mdf.columns:
                 if use_scaling and entry in self.scaling_factors:
-                    scaled_data = self.df[entry] / self.scaling_factors[entry]
+                    scaled_data = self.analysis.mdf[entry] / self.scaling_factors[entry]
                     label = f"{entry} / {self.scaling_factors[entry]:.1e}"
-                    ax.plot(self.df.index, scaled_data, label=label)
+                    index = self.analysis.mdf.index
+                    ax.plot((index - index[0]).total_seconds()/60, scaled_data, label=label)
                 else:
-                    ax.plot(self.df.index, self.df[entry], label=entry)
+                    index = self.analysis.mdf.index
+                    ax.plot((index - index[0]).total_seconds()/60, self.analysis.mdf[entry], label=entry)
+
+        # Set white background for axes and figure
+        ax.set_facecolor("white")
+        self.figure.set_facecolor("white")
+
+        # Add axis labels and title
+        ax.set_xlabel("Elapsed Time (min)")
+        ax.set_ylabel("Concentration")
 
         # Embedded title and label
         ax.legend()
