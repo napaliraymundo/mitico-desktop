@@ -1,7 +1,25 @@
 # mitico-desktop
 Data Analysis App for Mitico Reactors
-Launchable app for MacOS found in dist/mitico-analysis
+Download available in Github releases
 
+Steps to compile and build app updates:
+MAC
+source venv/bin/activate
+pip install pyqt5 pandas numpy matplotlib reportlab
+pip install pyinstaller
+python setup.py py2app
 
-To generate a new build, enter venv using source venv/bin/activate
-Then run python setup.py py2app
+PC
+venv\Scripts\activate
+pip install pyqt5 pandas numpy matplotlib reportlab
+pip install pyinstaller
+pyinstaller Analysis.py ^
+  --name Mitico ^
+  --onefile ^
+  --windowed ^
+  --icon=app.ico ^
+  --hidden-import numpy.linalg ^
+  --hidden-import pandas._libs.tslibs.timedeltas ^
+  --hidden-import pandas._libs.window.aggregations
+
+Builds are then found in the dist/ folder

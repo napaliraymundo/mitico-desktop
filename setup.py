@@ -4,12 +4,7 @@ APP = ['Analysis.py']
 OPTIONS = {
     'argv_emulation': False, # no terminal
     'iconfile': 'app.icns',
-    'packages': ['PyQt5', 'numpy', 'pandas', 'matplotlib'],
-     'excludes': [
-        'tkinter', 'email', 'unittest', 'doctest', 'pydoc',
-        'distutils', 'multiprocessing', 'sqlite3', 'http',
-        'xml', 'logging', 'asyncio'
-    ],
+    'packages': ['PyQt5', 'numpy', 'pandas', 'matplotlib', 'reportlab', 'scipy'],
     'compressed': True,
     'optimize': 2
 }

@@ -293,8 +293,8 @@ class CapacityAnalysis(QMainWindow):
             t_start = f[f['yCO2'] > sorption_start_threshold].index.min()
             t_end = f[(f['yCO2'] > sorption_end_threshold) & (f.index > t_start)].index.min()
             f_cut = f[(f.index >= t_start) & (f.index <= t_end)]
-            min_y = f['yCO2'].min()
-            total_absorbed.append(np.sum(f_cut['CO2 Absorbed [mol]']))
+            min_y = f_cut['yCO2'].min()
+            total_absorbed.append(np.sum(f['CO2 Absorbed [mol]']))
             start_times.append(t_start)
             end_times.append(t_end)
             min_gammas.append(min_y)

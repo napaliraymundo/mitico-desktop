@@ -159,6 +159,10 @@ class MyApp(QMainWindow):
             self.metrics_instance = TableViewer(self)
             self.cycle_instance = CapacityAnalysis(self)
 
+        # Always update instance variables from input widgets after validation
+        for widget, attr_name in inputs:
+            setattr(self, attr_name, widget.text())
+
         #Propagate changes and enable buttons if parameters OK
         self.cycle_button.setEnabled(True)
         self.metrics_button.setEnabled(True)
@@ -517,8 +521,8 @@ class MyApp(QMainWindow):
         analysis_layout.addWidget(self.viewer_button)
         analysis_layout.addWidget(self.cycle_button)
         analysis_layout.addWidget(self.metrics_button)
-        analysis_layout.addWidget(self.save_pdf_button)
         analysis_layout.addWidget(self.raw_data_button)
+        analysis_layout.addWidget(self.save_pdf_button)
 
         analysis_groupbox.setLayout(analysis_layout)
         toolbox_layout.addWidget(analysis_groupbox)
