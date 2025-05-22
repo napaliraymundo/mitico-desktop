@@ -17,7 +17,7 @@ pyinstaller Analysis.py ^
   --name Mitico ^
   --onefile ^
   --windowed ^
-  --icon=app.ico ^
+  --icon=icon.ico ^
   --hidden-import numpy.linalg ^
   --hidden-import pandas._libs.tslibs.timedeltas ^
   --hidden-import pandas._libs.window.aggregations
