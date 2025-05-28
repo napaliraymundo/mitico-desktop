@@ -18,9 +18,6 @@ class DataViewer(QMainWindow):
         self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
         self.setWindowFlags(self.windowFlags() | Qt.Window)
 
-        # === Compute scaling factors for all numeric columns ===
-        self.scaling_factors = self._calculate_scaling_factors()
-
         # Central layout setup
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -43,10 +40,7 @@ class DataViewer(QMainWindow):
 
         self.compound_list = QListWidget()
         self.compound_list.setSelectionMode(QListWidget.MultiSelection)
-        # Only add compounds that are not all NaN
-        for item in self.analysis.compound_list:
-            if self.analysis.mdf[item].notna().any():
-                self.compound_list.addItem(item)
+       
         # Enable (select) all compounds by default
         self.compound_list.selectAll()
         control_panel.addWidget(QLabel("Compounds"))
@@ -54,13 +48,11 @@ class DataViewer(QMainWindow):
 
         self.reactor_param_list = QListWidget()
         self.reactor_param_list.setSelectionMode(QListWidget.MultiSelection)
-        self.reactor_param_list.addItems(self.analysis.reactor_parameters)
         control_panel.addWidget(QLabel("Reactor Parameters"))
         control_panel.addWidget(self.reactor_param_list)
 
         self.other_param_list = QListWidget()
         self.other_param_list.setSelectionMode(QListWidget.MultiSelection)
-        self.other_param_list.addItems(self.analysis.other_parameters)
         control_panel.addWidget(QLabel("Other Parameters"))
         control_panel.addWidget(self.other_param_list)
 
@@ -77,9 +69,7 @@ class DataViewer(QMainWindow):
         self.other_param_list.itemSelectionChanged.connect(self.update_plot)
         self.scaling_checkbox.stateChanged.connect(self.update_plot)
 
-        self.update_plot()
-
-    def _calculate_scaling_factors(self):
+    def calculate_scaling_factors(self):
         # Only describe numeric columns
         describe_df = self.analysis.mdf.select_dtypes(include=[np.number]).describe()
         describe_df = describe_df.drop(columns=["TimeDiff"], errors="ignore")
@@ -91,7 +81,14 @@ class DataViewer(QMainWindow):
     def get_selected_items(self, widget):
         return [item.text() for item in widget.selectedItems() if item.text() != "None"]
 
-    def update_dropdowns(self):
+    def update_data(self):
+         # Only add compounds that are not all NaN
+        for item in self.analysis.compound_list:
+            if self.analysis.mdf[item].notna().any():
+                self.compound_list.addItem(item)
+        self.reactor_param_list.addItems(self.analysis.reactor_parameters)
+        self.other_param_list.addItems(self.analysis.other_parameters)
+
         # Block signals to avoid recursion when reloading lists
         self.compound_list.blockSignals(True)
         self.reactor_param_list.blockSignals(True)
@@ -112,6 +109,9 @@ class DataViewer(QMainWindow):
         self.other_param_list.clear()
         self.other_param_list.addItems(self.analysis.other_parameters)
 
+        # Rebuild scaling factors
+        self.scaling_factors = self.calculate_scaling_factors()
+
         # Re-enable signals
         self.compound_list.blockSignals(False)
         self.reactor_param_list.blockSignals(False)
@@ -121,7 +121,6 @@ class DataViewer(QMainWindow):
     def update_plot(self):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        
         use_scaling = self.scaling_checkbox.isChecked()
 
         selected_compounds = self.get_selected_items(self.compound_list)

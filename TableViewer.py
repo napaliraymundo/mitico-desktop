@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel, QApplication, QTableWidget, QTableWidgetItem
+from PyQt5.QtWidgets import QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -7,25 +7,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 
-class TableViewer(QMainWindow):
+class TableViewer(QWidget):
     def __init__(self, analysis):
-        self.analysis = analysis
-        print(self.analysis.cycle_times_df.columns)
         super().__init__()
+        self.analysis = analysis
         if 'No Completed Cycles' in self.analysis.mdf.columns:
             self.cycle_numbers = self.analysis.mdf['No Completed Cycles'].dropna().unique()
             multi_cycle = True
         else: 
             multi_cycle = False
 
-        self.setWindowTitle("View Metrics")
-        screen_geometry = QApplication.desktop().screenGeometry()
-        self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
-
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        main_layout = QHBoxLayout(self)
 
         # Add table displaying cycle_times_df
         self.table = QTableWidget()

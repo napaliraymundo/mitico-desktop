@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy, QGroupBox, QLineEdit, QMessageBox, QComboBox
+    QVBoxLayout, QHBoxLayout, QFileDialog, QTabWidget, QGroupBox, QLineEdit, QMessageBox, QComboBox
 )
 import pandas as pd
 import numpy as np
@@ -24,11 +24,11 @@ class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.filename = ""
-        self.mdf = []
+        self.mdf = pd.DataFrame()
+        self.cycle_times_df = pd.DataFrame()
         self.compound_list = []
         self.reactor_parameters = []
         self.other_parameters = []
-        self.cycle_times_df = None
         self.status_text = ""
         self.status_error = ""
         self.sorbent_mass = ""
@@ -42,8 +42,11 @@ class MyApp(QMainWindow):
         self.sorption_start = ""
         self.sorption_end = ""
         self.parameters_saved_text = "Status: Reactor Parameters Loaded"
-        self.metrics_instance = None
-        self.capacity_instance = None
+        self.viewer_instance = DataViewer(self)
+        self.metrics_instance = TableViewer(self)
+        self.cycle_instance = CapacityAnalysis(self)
+        self.raw_data_instance = RawDataViewer(self)
+
 
         # OTHER VARIABLES
         self.gas_abbr = {
@@ -77,8 +80,8 @@ class MyApp(QMainWindow):
                                 "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density"),
                                 "Packing Factor": (self.packing_factor_input, "packing_factor"),
                                 "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate"),
-                                "Reactor Input Ratio (CO2:N2)": (self.reactor_input_ratio_input, "reactor_input_ratio"),
-                                "QMS Input Ratio (baseline)": (self.qms_input_ratio_input, "qms_input_ratio"),
+                                "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio"),
+                                "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio"),
                                 "Sorption Start (%)": (self.sorption_start_input, "sorption_start"),
                                 "Sorption End (%)": (self.sorption_end_input, "sorption_end"),
                             }
@@ -122,7 +125,7 @@ class MyApp(QMainWindow):
             self.parameter_status.setText("Status: Run Parameters Changed")
             # Update label text for reactor input ratio
             abbr = self.gas_abbr[self.reference_gas_dropdown.currentText()]
-            self.reactor_input_ratio_label.setText(f"Reactor Input Ratio (CO2:{abbr})")
+            self.reactor_input_ratio_label.setText(f"Reactor Input Ratio (%)")
         
         #Change detection for text inputs
         inputs = [
@@ -150,22 +153,13 @@ class MyApp(QMainWindow):
                 self.save_parameters_button.setEnabled(False)
                 self.parameter_status.setStyleSheet("color: red")
                 self.parameter_status.setText(f"Error: '{value}' is not a number")
-                self.cycle_button.setEnabled(False)
-                self.metrics_button.setEnabled(False)
                 return False #Check run parameters fails
-            
-        #Instantiate if first time
-        if(self.metrics_instance == None):
-            self.metrics_instance = TableViewer(self)
-            self.cycle_instance = CapacityAnalysis(self)
 
         # Always update instance variables from input widgets after validation
         for widget, attr_name in inputs:
             setattr(self, attr_name, widget.text())
 
         #Propagate changes and enable buttons if parameters OK
-        self.cycle_button.setEnabled(True)
-        self.metrics_button.setEnabled(True)
         if not self.first_load: self.update_all_calculations()
         return True
     
@@ -174,10 +168,12 @@ class MyApp(QMainWindow):
         self.cycle_instance.calculate_sorption()
         self.cycle_instance.calculate_kinetics()
         self.cycle_instance.update_plots()
-        self.viewer_instance.update_dropdowns()
+        self.viewer_instance.update_data()
+        self.viewer_instance.update_plot()
         self.metrics_instance.reload_dropdown()
         self.metrics_instance.update_table()
         self.metrics_instance.update_plot()
+        self.raw_data_instance.update_table()
 
     def save_run_parameters(self):
         """Save run parameters to run_parameters.csv indexed by filename."""
@@ -191,8 +187,8 @@ class MyApp(QMainWindow):
             "Input Flow Rate [SCCM]": self.input_flow_rate_input.text(),
             "Packing Factor": self.packing_factor_input.text(),
             "Reference Gas": self.reference_gas_dropdown.currentText(),
-            "Reactor Input Ratio (CO2:N2)": self.reactor_input_ratio_input.text(),
-            "QMS Input Ratio (baseline)": self.qms_input_ratio_input.text(),
+            "Reactor Input Ratio (%)": self.reactor_input_ratio_input.text(),
+            "QMS Input Ratio (%)": self.qms_input_ratio_input.text(),
             "Sorption Start (%)": self.sorption_start_input.text(),
             "Sorption End (%)": self.sorption_end_input.text()
         }
@@ -249,10 +245,7 @@ class MyApp(QMainWindow):
                 self.run_parameters_groupbox.setEnabled(True)
                 self.baldy2_button.setEnabled(True)
                 self.baldy3_button.setEnabled(True)
-                self.viewer_button.setEnabled(True)
-                self.raw_data_button.setEnabled(True)
                 self.select_button.setText("Load New QMS Data (Restart)")
-                self.viewer_instance = DataViewer(self)
                 self.load_run_parameters()
                 self.save_pdf_button.setEnabled(True)  # Enable PDF button when data is loaded
             except ValueError as e:
@@ -265,8 +258,6 @@ class MyApp(QMainWindow):
                 self.parameter_status.setText("Status: Waiting for QMS data load")
                 self.baldy2_button.setEnabled(False)
                 self.baldy3_button.setEnabled(False)
-                self.viewer_button.setEnabled(False)
-                self.raw_data_button.setEnabled(False)
                 self.run_parameters_groupbox.setEnabled(False)
 
     def load_reactor_data(self):
@@ -316,52 +307,17 @@ class MyApp(QMainWindow):
                 self.secondary_status.setText(f'Status: File invalid – Try another CSV')
         else: self.secondary_status.setText("Status: No Secondary File Loaded")
 
-    def launch_viewer(self):
-        """Instantiate the DataViewer class on button click"""
-        if hasattr(self, 'viewer_instance') and self.viewer_instance is not None:
-            if self.viewer_instance.isVisible():
-                self.viewer_instance.raise_()
-                return
-            else:
-                self.viewer_instance.show()
-                return
-        self.viewer_instance = DataViewer(self)
-        self.viewer_instance.show()
-
-    def launch_cycle(self):
-        """Instantiate the CapacityAnalysis class on button click"""
-        if hasattr(self, 'cycle_instance') and self.cycle_instance is not None:
-            if self.cycle_instance.isVisible():
-                self.cycle_instance.raise_()
-                return
-            else:
-                self.cycle_instance.show()
-                return
-        self.cycle_instance = CapacityAnalysis(self)
-        self.cycle_instance.show()
-
-    def launch_metrics(self):
-        """Instantiate the TableViewer class on button click"""
-        if hasattr(self, 'metrics_instance') and self.metrics_instance is not None:
-            if self.metrics_instance.isVisible():
-                self.metrics_instance.raise_()
-                return
-            else:
-                self.metrics_instance.show()
-                return
-        self.metrics_instance = TableViewer(self)
-        self.metrics_instance.show()
 
     def restart_analysis(self):
         """Close the application and make a fresh instance"""
-        QApplication.quit()
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        ##Need to implement
+        
 
     def build_layout(self):
         self.setWindowTitle("Mitico Data Analysis")
         # Remove global stylesheet
         self.screen_geometry = QApplication.desktop().availableGeometry()
-        self.setGeometry(0, 0, 200, self.screen_geometry.height())
+        self.setGeometry(0, 0, self.screen_geometry.width(), self.screen_geometry.height())
 
         # Central widget
         self.central_widget = QWidget()
@@ -470,13 +426,13 @@ class MyApp(QMainWindow):
         run_parameters_layout.addLayout(input_flow_rate_layout)
 
         reactor_input_ratio_layout = QHBoxLayout()
-        self.reactor_input_ratio_label = QLabel("Reactor Input Ratio (CO2:__)")
+        self.reactor_input_ratio_label = QLabel("Reactor Input Ratio (%)")
         reactor_input_ratio_layout.addWidget(self.reactor_input_ratio_label)
         reactor_input_ratio_layout.addWidget(self.reactor_input_ratio_input)
         run_parameters_layout.addLayout(reactor_input_ratio_layout)
 
         qms_input_ratio_layout = QHBoxLayout()
-        qms_input_ratio_label = QLabel("QMS Input Ratio (baseline):")
+        qms_input_ratio_label = QLabel("QMS Input Ratio (%):")
         qms_input_ratio_layout.addWidget(qms_input_ratio_label)
         qms_input_ratio_layout.addWidget(self.qms_input_ratio_input)
         run_parameters_layout.addLayout(qms_input_ratio_layout)
@@ -503,25 +459,20 @@ class MyApp(QMainWindow):
         toolbox_layout.addWidget(self.run_parameters_groupbox)
 
         # RUN ANALYSIS SECTION
-        self.viewer_button = QPushButton("Graph Run")
-        self.viewer_button.setEnabled(False)
-        self.cycle_button = QPushButton("Graph Cycle")
-        self.cycle_button.setEnabled(False)
-        self.metrics_button = QPushButton("View Metrics")
-        self.metrics_button.setEnabled(False)
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.North)
+        self.tabs.addTab(self.viewer_instance, "Graph Run")
+        self.tabs.addTab(self.cycle_instance,"Graph Cycle")
+        self.tabs.addTab(self.metrics_instance, "View Metrics")
+        self.tabs.addTab(self.raw_data_instance, "Raw Data")
+
         self.save_pdf_button = QPushButton("Save Full PDF Report")
         self.save_pdf_button.setEnabled(False)
-        self.raw_data_button = QPushButton("Raw Data")
-        self.raw_data_button.setEnabled(False)
 
         analysis_groupbox = QGroupBox("Program Functions")
         analysis_layout = QVBoxLayout()
         analysis_layout.setSpacing(8)
         analysis_layout.setContentsMargins(4, 4, 4, 4)
-        analysis_layout.addWidget(self.viewer_button)
-        analysis_layout.addWidget(self.cycle_button)
-        analysis_layout.addWidget(self.metrics_button)
-        analysis_layout.addWidget(self.raw_data_button)
         analysis_layout.addWidget(self.save_pdf_button)
 
         analysis_groupbox.setLayout(analysis_layout)
@@ -532,18 +483,15 @@ class MyApp(QMainWindow):
         toolbox_widget.setLayout(toolbox_layout)
         self.viewer_widget.setLayout(self.viewer_layout)
         self.main_layout.addWidget(toolbox_widget)
+        self.main_layout.addWidget(self.tabs, stretch=1)
         self.central_widget.setLayout(self.main_layout)
 
         # LINK BUTTON ON CLICK
         self.select_button.clicked.connect(self.load_qms_data)
         self.baldy3_button.clicked.connect(self.load_reactor_data)
         self.baldy2_button.clicked.connect(self.load_temp_data)
-        self.viewer_button.clicked.connect(self.launch_viewer)
-        self.cycle_button.clicked.connect(self.launch_cycle)
-        self.metrics_button.clicked.connect(self.launch_metrics)
         self.save_parameters_button.clicked.connect(self.save_run_parameters)
         self.save_pdf_button.clicked.connect(self.save_pdf_report)
-        self.raw_data_button.clicked.connect(self.launch_raw_data)
 
         self.reference_gas_dropdown.currentIndexChanged.connect(self.check_run_parameters)
         #Store last committed values for each QLineEdit
@@ -579,7 +527,7 @@ class MyApp(QMainWindow):
 
         # Prompt user for save location
         from PyQt5.QtWidgets import QFileDialog
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save PDF Report", "report.pdf", "PDF Files (*.pdf)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save PDF Report", f"{self.filename} Exp Report.pdf", "PDF Files (*.pdf)")
         if not file_path:
             return
         if not file_path.lower().endswith('.pdf'):
@@ -610,8 +558,8 @@ class MyApp(QMainWindow):
             ("Packing Factor", self.packing_factor_input.text()),
             ("Input Flow Rate [SCCM]", self.input_flow_rate_input.text()),
             ("Reference Gas", self.reference_gas_dropdown.currentText()),
-            ("Reactor Input Ratio (CO2:N2)", self.reactor_input_ratio_input.text()),
-            ("QMS Input Ratio (baseline)", self.qms_input_ratio_input.text()),
+            ("Reactor Input Ratio (%)", self.reactor_input_ratio_input.text()),
+            ("QMS Input Ratio (%)", self.qms_input_ratio_input.text()),
             ("Sorption Start (%)", self.sorption_start_input.text()),
             ("Sorption End (%)", self.sorption_end_input.text()),
         ]
@@ -777,18 +725,6 @@ class MyApp(QMainWindow):
         # Success message
         from PyQt5.QtWidgets import QMessageBox
         QMessageBox.information(self, "PDF Exported", f"PDF report saved to:\n{file_path}")
-    
-    def launch_raw_data(self):
-        """Open a window showing the entire mdf as a table."""
-        if hasattr(self, 'raw_data_instance') and self.raw_data_instance is not None:
-            if self.raw_data_instance.isVisible():
-                self.raw_data_instance.raise_()
-                return
-            else:
-                self.raw_data_instance.show()
-                return
-        self.raw_data_instance = RawDataViewer(self.mdf)
-        self.raw_data_instance.show()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

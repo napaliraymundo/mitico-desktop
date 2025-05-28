@@ -115,34 +115,40 @@ class CapacityAnalysis(QMainWindow):
         
     #Button functions to trim start of calculation
     def cut_start(self):
-        if self.sorption_start_override.text() == '':
-            self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
-                self.cycle_times_df['Start'][self.current_cycle_index]
-        elif float(self.sorption_start_override.text()):
-            self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
-                self.cycle_times_df['Start'][self.current_cycle_index]+ \
-                    pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
-            self.calculate_secondary()
-            self.calculate_sorption()
-            self.calculate_kinetics()
-            self.update_plots()
-            self.analysis.metrics_instance.update_table()
-            self.analysis.metrics_instance.update_plot()
+        try:
+            if self.sorption_start_override.text() == '':
+                self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
+                    self.cycle_times_df['Start'][self.current_cycle_index]
+            elif float(self.sorption_start_override.text()):
+                self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
+                    self.cycle_times_df['Start'][self.current_cycle_index]+ \
+                        pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
+                self.calculate_secondary()
+                self.calculate_sorption()
+                self.calculate_kinetics()
+                self.update_plots()
+                self.analysis.metrics_instance.update_table()
+                self.analysis.metrics_instance.update_plot()
+        except ValueError:
+            pass
     #Button function to trim end of calculation
     def cut_end(self):
-        if self.sorption_end_override.text() == '':
-            self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
-                self.cycle_times_df['Start'][self.current_cycle_index]
-        elif float(self.sorption_end_override.text()):
-            self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
-                self.cycle_times_df['Start'][self.current_cycle_index] + \
-                    pd.to_timedelta(float(self.sorption_end_override.text()),unit='m')
-            self.calculate_secondary()
-            self.calculate_sorption()
-            self.calculate_kinetics()
-            self.update_plots()
-            self.analysis.metrics_instance.update_table()
-            self.analysis.metrics_instance.update_plot()
+        try:
+            if self.sorption_end_override.text() == '':
+                self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
+                    self.cycle_times_df['Start'][self.current_cycle_index]
+            elif float(self.sorption_end_override.text()):
+                self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
+                    self.cycle_times_df['Start'][self.current_cycle_index] + \
+                        pd.to_timedelta(float(self.sorption_end_override.text()),unit='m')
+                self.calculate_secondary()
+                self.calculate_sorption()
+                self.calculate_kinetics()
+                self.update_plots()
+                self.analysis.metrics_instance.update_table()
+                self.analysis.metrics_instance.update_plot()
+        except ValueError:
+            pass
     #Button function to view previous cycle
     def select_prev_cycle(self):
         if self.current_cycle_index > 0:
@@ -161,8 +167,11 @@ class CapacityAnalysis(QMainWindow):
             self.update_plots()
     #Reload graphs on parameter or input change
     def update_plots(self):
+        #Setup
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
+
+        #Plot 1
         self.figure1.clear()
         ax1 = self.figure1.add_subplot(111)
         n = self.cycle_numbers[self.current_cycle_index]
@@ -185,10 +194,17 @@ class CapacityAnalysis(QMainWindow):
                 if col == 'yCO2':
                     ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60, f_cut_left[col], color='grey', linestyle=':')
                     ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60, f_cut_right[col], color='grey', linestyle=':')
-        start_relative = (self.cycle_times_df['Sorption Integration Start'][n-1]-f.index[0]).total_seconds()/60
-        end_relative = (self.cycle_times_df['Sorption Integration End'][n-1]-f.index[0]).total_seconds()/60
-        ax1.axvline(x=start_relative, linestyle='--',label=f'Start Cycle {n}')
-        ax1.axvline(x=end_relative,linestyle='--',label=f'End Cycle {n}')
+        
+        # Plot 2
+        regression_start_rel = (self.cycle_times_df['Sorption Integration Start'][n-1]-f.index[0]).total_seconds()/60
+        regression_end_rel = (self.cycle_times_df['Sorption Integration End'][n-1]-f.index[0]).total_seconds()/60
+        sorption_start_rel ={(f_center.index[0] - f.index[0]).dt.total_seconds()/60}
+        sorption_end_rel = (f_center.index[-1] - f.index[0]).dt.total_seconds()/60
+        ax1.axvline(x=regression_start_rel, linestyle='--',label=f'Regression Start = {self.analysis.sorption_start_input.text()}%')
+        ax1.axvline(x=regression_end_rel,linestyle='--',label=f'Regression End = {self.analysis.sorption_end_input.text()}%')
+        ax1.axvline(x=sorption_start_rel, linestyle='--',label=f'Sorption Start = {sorption_start_rel:3f}min')
+        ax1.axvline(x=sorption_end_rel,linestyle='--',label=f'Sorption End = {sorption_end_rel:3f}min%')
+        ax1.set_title(f'Cycle #{n} Absorption Plot')
         ax1.set_xlabel("Time (min)")
         ax1.legend()
         ax1.grid(True)
@@ -211,6 +227,7 @@ class CapacityAnalysis(QMainWindow):
                 label = f"Fit: ln[CO2] = -k·t + ln[CO2]_0 (R² = {r2:.3f})" if r2 is not None and np.isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
                 ax2.plot(x_fit, y_fit, '--', color='red', label=label)
             ax2.set_xlabel("Residence Time [s]")
+            ax2.set_title(f'Cycle #{n} Kinetics Regression')
             ax2.set_ylabel("ln[CO2]")
             ax2.legend()
             ax2.grid(True)
@@ -246,7 +263,7 @@ class CapacityAnalysis(QMainWindow):
         self.df['yCO2'] = self.df[co2_ref_col] * correction
         input_flow_rate_sccm = float(self.analysis.input_flow_rate)
         input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
-        co2_input_flow_rate_molar = input_flow_rate_molar * float(self.analysis.reactor_input_ratio)
+        co2_input_flow_rate_molar = input_flow_rate_molar * float(self.analysis.reactor_input_ratio) / 100 #since the input is a %
         self.df['[CO2]']=self.df['yCO2']*reactor_pressure/gas_constant_r/reactor_temp_k
         self.df['ln[CO2]'] = np.log(self.df['[CO2]'])
         self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2']* input_flow_rate_molar
@@ -318,6 +335,7 @@ class CapacityAnalysis(QMainWindow):
         df['Volume of Active Sorbent [mL]'] = np.nan
         df['Residence Time [s]'] = np.nan
         co2_molar_mass = 44.01
+        constant_lnco2_0 = 1.312488772
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
         # Prepare lists for regression results
         rate_constants = []
@@ -347,26 +365,29 @@ class CapacityAnalysis(QMainWindow):
             x = residence_time.values
             y = f.loc[mask, 'ln[CO2]'].values
             if len(x) > 1:
-                slope, intercept, r_value, p_value, std_err = linregress(x, y)
+                # Force fit with constant y-intercept (constant_lnco2_0)
+                # y = -k * x + constant_lnco2_0 => y - constant_lnco2_0 = -k * x
+                y_adj = y - constant_lnco2_0
+                # Fit slope only
+                slope, _, r_value, p_value, std_err = linregress(x, y_adj)
                 rate_constant_k = -slope
-                lnCO2_t0 = intercept  # This is the true y-intercept from the fit
+                # lnCO2_t0 = constant_lnco2_0  # Forced intercept
                 regression_r2 = r_value ** 2
             else:
                 rate_constant_k = np.nan
-                lnCO2_t0 = np.nan
+                # lnCO2_t0 = np.nan
                 regression_r2 = np.nan
             # Save to lists for this cycle
             rate_constants.append(rate_constant_k)
-            lnco2_t0s.append(lnCO2_t0)
+            # lnco2_t0s.append(lnCO2_t0)
             r2s.append(regression_r2)
         # Save to cycle_times_df for all cycles
         self.cycle_times_df['rate_constant_k'] = rate_constants
-        self.cycle_times_df['lnCO2_t0'] = lnco2_t0s
+        # self.cycle_times_df['lnCO2_t0'] = lnco2_t0s
         self.cycle_times_df['regression_r2'] = r2s
         return
 
     def setup_metric_selector(self):
-        # ...existing code...
         self.metric_selector.clear()
         for metric in self.metrics:
             self.metric_selector.addItem(metric)
