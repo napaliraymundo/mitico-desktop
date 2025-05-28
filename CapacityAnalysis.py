@@ -123,12 +123,7 @@ class CapacityAnalysis(QMainWindow):
                 self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
                     self.cycle_times_df['Start'][self.current_cycle_index]+ \
                         pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
-                self.calculate_secondary()
-                self.calculate_sorption()
-                self.calculate_kinetics()
-                self.update_plots()
-                self.analysis.metrics_instance.update_table()
-                self.analysis.metrics_instance.update_plot()
+                self.analysis.update_all_calculations()
         except ValueError:
             pass
     #Button function to trim end of calculation
@@ -141,12 +136,7 @@ class CapacityAnalysis(QMainWindow):
                 self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
                     self.cycle_times_df['Start'][self.current_cycle_index] + \
                         pd.to_timedelta(float(self.sorption_end_override.text()),unit='m')
-                self.calculate_secondary()
-                self.calculate_sorption()
-                self.calculate_kinetics()
-                self.update_plots()
-                self.analysis.metrics_instance.update_table()
-                self.analysis.metrics_instance.update_plot()
+                self.analysis.update_all_calculations()
         except ValueError:
             pass
     #Button function to view previous cycle
@@ -195,15 +185,35 @@ class CapacityAnalysis(QMainWindow):
                     ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60, f_cut_left[col], color='grey', linestyle=':')
                     ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60, f_cut_right[col], color='grey', linestyle=':')
         
-        # Plot 2
         regression_start_rel = (self.cycle_times_df['Sorption Integration Start'][n-1]-f.index[0]).total_seconds()/60
         regression_end_rel = (self.cycle_times_df['Sorption Integration End'][n-1]-f.index[0]).total_seconds()/60
-        sorption_start_rel ={(f_center.index[0] - f.index[0]).dt.total_seconds()/60}
-        sorption_end_rel = (f_center.index[-1] - f.index[0]).dt.total_seconds()/60
-        ax1.axvline(x=regression_start_rel, linestyle='--',label=f'Regression Start = {self.analysis.sorption_start_input.text()}%')
-        ax1.axvline(x=regression_end_rel,linestyle='--',label=f'Regression End = {self.analysis.sorption_end_input.text()}%')
-        ax1.axvline(x=sorption_start_rel, linestyle='--',label=f'Sorption Start = {sorption_start_rel:3f}min')
-        ax1.axvline(x=sorption_end_rel,linestyle='--',label=f'Sorption End = {sorption_end_rel:3f}min%')
+        sorption_start_rel = (f_center.index[0] - f.index[0]).total_seconds()/60
+        sorption_end_rel = (f_center.index[-1] - f.index[0]).total_seconds()/60
+        # Get colors from plotted lines for yCO2 and Residence Time [s]
+        yco2_color = None
+        residence_time_color = None
+        for line in ax1.get_lines():
+            label = line.get_label()
+            if label == 'yCO2': yco2_color = line.get_color()
+            elif label == 'Residence Time [s]': residence_time_color = line.get_color()
+        # Fallback to default colors if not found
+        if yco2_color is None:
+            yco2_color = 'blue'
+        if residence_time_color is None:
+            residence_time_color = 'red'
+
+        ax1.axvline(x=regression_start_rel, linestyle='--',
+                label=f'Regression Start = {self.analysis.sorption_start_input.text()}%',
+                color=residence_time_color)
+        ax1.axvline(x=regression_end_rel, linestyle='--',
+                label=f'Regression End = {self.analysis.sorption_end_input.text()}%',
+                color=residence_time_color)
+        ax1.axvline(x=sorption_start_rel, linestyle='--',
+                label=f'Sorption Start = {int(sorption_start_rel)}min',
+                color=yco2_color)
+        ax1.axvline(x=int(sorption_end_rel), linestyle='--',
+                label=f'Sorption End = {int(sorption_end_rel)}min',
+                color=yco2_color)
         ax1.set_title(f'Cycle #{n} Absorption Plot')
         ax1.set_xlabel("Time (min)")
         ax1.legend()
@@ -214,17 +224,20 @@ class CapacityAnalysis(QMainWindow):
         # Bottom plot: Accumulated CO2 Absorbed for selected cycle
         self.figure2.clear()
         ax2 = self.figure2.add_subplot(111)
-        # Use same f_center as above for plotting
+        # Retrim
+        start_cut = self.cycle_times_df['Sorption Integration Start'][n-1]
+        end_cut = self.cycle_times_df['Sorption Integration End'][n-1]
+        f_center = f[(f.index > start_cut) & (f.index < end_cut)]
         if 'Accumulated CO2 Absorbed [mol]' in f.columns:
             ax2.plot(f_center['Residence Time [s]'], f_center['ln[CO2]'], label=f'Cycle #{n}')
             # Plot the fitted line from cycle_times_df
             k = self.cycle_times_df['rate_constant_k'][n-1]
-            lnco2_t0 = self.cycle_times_df['lnCO2_t0'][n-1]
+            # lnco2_t0 = self.cycle_times_df['lnCO2_t0'][n-1]
             r2 = self.cycle_times_df['regression_r2'][n-1] if 'regression_r2' in self.cycle_times_df.columns else None
-            if np.isfinite(k) and np.isfinite(lnco2_t0):
+            if np.isfinite(k): #and np.isfinite(lnco2_t0):
                 x_fit = f_center['Residence Time [s]'].values
-                y_fit = -k * x_fit + lnco2_t0  # Correct sign for -k
-                label = f"Fit: ln[CO2] = -k·t + ln[CO2]_0 (R² = {r2:.3f})" if r2 is not None and np.isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
+                y_fit = (-k * x_fit) +  self.constant_lnco2_0 #lnco2_t0  # Correct sign for -k
+                label = f"Fit: ln[CO2] = -{k:.3f}·t + {self.constant_lnco2_0:.3f} (R² = {r2:.3f})" if r2 is not None and np.isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
                 ax2.plot(x_fit, y_fit, '--', color='red', label=label)
             ax2.set_xlabel("Residence Time [s]")
             ax2.set_title(f'Cycle #{n} Kinetics Regression')
@@ -248,7 +261,7 @@ class CapacityAnalysis(QMainWindow):
         reactor_temp_k = reactor_temp_c + 273.15
         sccm_to_molar = reactor_pressure * (1e-6) / (60) / gas_constant_r / 273.15
 
-        ref_gas = self.analysis.reference_gas
+        ref_gas = self.analysis.reference_gas_dropdown.currentText()
         gas_abbr = self.analysis.gas_abbr  # Use the lookup from analysis
         abbr = gas_abbr.get(ref_gas, ref_gas)
         if ref_gas in self.df.columns:
@@ -304,8 +317,9 @@ class CapacityAnalysis(QMainWindow):
             if 'Cycle Identifier' in self.df.columns:
                 f = self.df[(self.df['Cycle Identifier'] == 3) & (self.df['No Completed Cycles'] == n)]
             #Cut the single cycle dataframe based on sorption_start/end_cut
-            f = f[(f.index > self.cycle_times_df['sorption_start_cut'][n-1])\
-                  &(f.index < self.cycle_times_df['sorption_end_cut'][n-1])]
+            start_cut = self.cycle_times_df['sorption_start_cut'][n-1]
+            end_cut = self.cycle_times_df['sorption_end_cut'][n-1]
+            f = f[(f.index > start_cut) & (f.index < end_cut)]
             
             t_start = f[f['yCO2'] > sorption_start_threshold].index.min()
             t_end = f[(f['yCO2'] > sorption_end_threshold) & (f.index > t_start)].index.min()
@@ -319,7 +333,7 @@ class CapacityAnalysis(QMainWindow):
         self.cycle_times_df['Sorption Integration Start'] = start_times
         self.cycle_times_df['Sorption Integration End'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
-        self.cycle_times_df['Sorption Duration'] = np.subtract(end_times, start_times)
+        self.cycle_times_df['Sorption Duration'] = np.subtract(end_cut, start_cut)
         self.cycle_times_df['Experimental CO2absorbed [mol]'] = total_absorbed
         self.cycle_times_df['Experimental CO2absorbed [g]'] = self.cycle_times_df['Experimental CO2absorbed [mol]'] * co2_molar_mass
         self.cycle_times_df['Sorbent Capacity [gCO2/gSorbent]'] = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_mass
@@ -335,7 +349,7 @@ class CapacityAnalysis(QMainWindow):
         df['Volume of Active Sorbent [mL]'] = np.nan
         df['Residence Time [s]'] = np.nan
         co2_molar_mass = 44.01
-        constant_lnco2_0 = 1.312488772
+        self.constant_lnco2_0 = 1.312488772
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
         # Prepare lists for regression results
         rate_constants = []
@@ -347,7 +361,8 @@ class CapacityAnalysis(QMainWindow):
                 f = df[df['No Completed Cycles'] == n]
             else:
                 f = df
-            start_time = cycle_times_df['Sorption Integration Start'][n-1]
+            #Masking from beginning of sorption to end of integration
+            start_time = cycle_times_df['sorption_start_cut'][n-1]
             end_time = cycle_times_df['Sorption Integration End'][n-1]
 
             mask = (f.index >= start_time) & (f.index <= end_time)
@@ -361,13 +376,18 @@ class CapacityAnalysis(QMainWindow):
             df.loc[f.loc[mask].index, 'Volume of Active Sorbent [mL]'] = sorbent_active_volume
             df.loc[f.loc[mask].index, 'Residence Time [s]'] = residence_time
 
+            # Further trim the area to within the regression region
+            start_time = cycle_times_df['Sorption Integration Start'][n-1]
+            end_time = cycle_times_df['Sorption Integration End'][n-1]
+
+            f = f[(f.index > start_time) & (f.index < end_time)]
             # Linear regression: ln[CO2] = -k*t + intercept
-            x = residence_time.values
-            y = f.loc[mask, 'ln[CO2]'].values
+            x = residence_time[f.index].values
+            y = f['ln[CO2]'].values
             if len(x) > 1:
                 # Force fit with constant y-intercept (constant_lnco2_0)
                 # y = -k * x + constant_lnco2_0 => y - constant_lnco2_0 = -k * x
-                y_adj = y - constant_lnco2_0
+                y_adj = y - self.constant_lnco2_0
                 # Fit slope only
                 slope, _, r_value, p_value, std_err = linregress(x, y_adj)
                 rate_constant_k = -slope

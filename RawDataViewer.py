@@ -21,6 +21,7 @@ class RawDataViewer(QMainWindow):
     def update_table(self):
         # Only show the first 1000 rows to prevent UI issues with large files
         df = self.analysis.mdf.reset_index().iloc[:1000]
+        self.table.clear()
         self.table.setRowCount(df.shape[0])
         self.table.setColumnCount(df.shape[1])
         self.table.setHorizontalHeaderLabels([str(col) for col in df.columns])
