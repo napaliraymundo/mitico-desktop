@@ -165,7 +165,7 @@ class MyApp(QMainWindow):
     
     def update_all_calculations(self):
         self.cycle_instance.calculate_secondary()
-        self.cycle_instance.calculate_sorption()
+        self.cycle_instance.calculate_sorption()    
         self.cycle_instance.calculate_kinetics()
         self.cycle_instance.update_plots()
         self.viewer_instance.update_data()

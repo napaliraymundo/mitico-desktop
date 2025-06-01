@@ -280,8 +280,10 @@ class CapacityAnalysis(QMainWindow):
         self.df['[CO2]']=self.df['yCO2']*reactor_pressure/gas_constant_r/reactor_temp_k
         self.df['ln[CO2]'] = np.log(self.df['[CO2]'])
         self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2']* input_flow_rate_molar
-        self.df['CO2 Absorbed [mol]'] = (co2_input_flow_rate_molar - \
-           self.df['CO2 Partial Flow Rate Out [mol/s]']) * self.df['TimeDiff'].dt.total_seconds()
+        self.df['CO2 Absorbed [mol]'] = np.maximum(
+            (co2_input_flow_rate_molar - self.df['CO2 Partial Flow Rate Out [mol/s]']) * self.df['TimeDiff'].dt.total_seconds(),
+            0
+        )
         
         self.analysis.mdf = self.df
         self.analysis.cycle_times_df = self.cycle_times_df
@@ -348,6 +350,7 @@ class CapacityAnalysis(QMainWindow):
         df['Accumulated CO2 Absorbed [mol]'] = np.nan
         df['Volume of Active Sorbent [mL]'] = np.nan
         df['Residence Time [s]'] = np.nan
+        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
         co2_molar_mass = 44.01
         self.constant_lnco2_0 = 1.312488772
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
@@ -364,11 +367,14 @@ class CapacityAnalysis(QMainWindow):
             #Masking from beginning of sorption to end of integration
             start_time = cycle_times_df['sorption_start_cut'][n-1]
             end_time = cycle_times_df['Sorption Integration End'][n-1]
-
             mask = (f.index >= start_time) & (f.index <= end_time)
             # Compute cumulative sum for the masked slice
             absorbed_cumsum = f.loc[mask, 'CO2 Absorbed [mol]'].cumsum()
-            sorbent_active_volume = sorbent_vol - (absorbed_cumsum * co2_molar_mass \
+            if len(absorbed_cumsum > 0):
+                sorbent_active_volume = sorbent_vol - (absorbed_cumsum * co2_molar_mass \
+                                                    / (absorbed_cumsum[-1] * co2_molar_mass/ sorbent_vol))
+            else: 
+                sorbent_active_volume = sorbent_vol - (absorbed_cumsum * co2_molar_mass \
                                                    / cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'][n-1])
             residence_time = sorbent_active_volume / float(self.analysis.input_flow_rate) * 60
             # Insert the cumulative sum into the main df for the same indices
