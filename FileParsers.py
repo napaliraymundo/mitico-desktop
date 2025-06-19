@@ -1,8 +1,6 @@
 import os
 import pandas as pd
-import numpy as np
-import csv
-from io import StringIO
+from numpy import nan, unique, insert
 
 class MassSpecParser:
     def __init__(self, analysis):
@@ -59,9 +57,9 @@ class Baldy2Parser:
         # Assume columns: Date, Time, T1, T2, T3, T4, T5
         temp_df.columns = ['Date', 'Time', 'T1', 'T2', 'T3', 'T4']
 
-        # Replace "OL" with np.nan in all temperature columns, make float
+        # Replace "OL" with nan in all temperature columns, make float
         temp_columns = ['T1', 'T2', 'T3', 'T4']
-        temp_df[temp_columns] = temp_df[temp_columns].replace("OL", np.nan)
+        temp_df[temp_columns] = temp_df[temp_columns].replace("OL", nan)
         temp_df[temp_columns] = temp_df[temp_columns].astype(float)
 
         # Combine date and time, parse to datetime
@@ -97,8 +95,8 @@ class BackendParser:
 
     def parse(self):
         # Select backend files corresponding to the dates in the selected mass spec file
-        dates_to_pull = np.unique(self.mdf.index.date)
-        dates_to_pull = np.insert(dates_to_pull,0,
+        dates_to_pull = unique(self.mdf.index.date)
+        dates_to_pull = insert(dates_to_pull,0,
                                     dates_to_pull.min() - pd.Timedelta(days=1))
         backend_filenames = \
         [f"data_{date.strftime('%Y-%m-%d')}.csv" for date in dates_to_pull]

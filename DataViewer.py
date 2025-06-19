@@ -5,8 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-import numpy as np
-import pandas as pd
+from numpy import number, floor, log10
 
 class DataViewer(QMainWindow):
     def __init__(self, analysis):
@@ -71,10 +70,10 @@ class DataViewer(QMainWindow):
 
     def calculate_scaling_factors(self):
         # Only describe numeric columns
-        describe_df = self.analysis.mdf.select_dtypes(include=[np.number]).describe()
+        describe_df = self.analysis.mdf.select_dtypes(include=[number]).describe()
         describe_df = describe_df.drop(columns=["TimeDiff"], errors="ignore")
         scaling = (describe_df.loc['max']).apply(
-            lambda x: 10**(np.floor(np.log10(abs(x)))) if x != 0 else 1
+            lambda x: 10**(floor(log10(abs(x)))) if x != 0 else 1
         ).fillna(1)
         return scaling.to_dict()
 

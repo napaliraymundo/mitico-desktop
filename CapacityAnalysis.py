@@ -3,8 +3,7 @@ from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+from numpy import nan, sum, maximum, isfinite, pi, e, log, subtract
 from scipy.stats import linregress
 
 class CapacityAnalysis(QMainWindow):
@@ -249,10 +248,10 @@ class CapacityAnalysis(QMainWindow):
             k = self.cycle_times_df['Rate Constant K (Wet)'][n-1]
             # lnco2_t0 = self.cycle_times_df['lnCO2_t0'][n-1]
             r2 = self.cycle_times_df['Wet Kinetics Regression R2'][n-1] if 'Wet Kinetics Regression R2' in self.cycle_times_df.columns else None
-            if np.isfinite(k): #and np.isfinite(lnco2_t0):
+            if isfinite(k): #and isfinite(lnco2_t0):
                 x_fit = f_center['Residence Time [s]'].values
                 y_fit = (-k * x_fit) +  self.constant_lnco2_0 #lnco2_t0  # Correct sign for -k
-                label = f"Fit: ln[CO2] = -{k:.3f}·t + {self.constant_lnco2_0:.3f} (R² = {r2:.3f})" if r2 is not None and np.isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
+                label = f"Fit: ln[CO2] = -{k:.3f}·t + {self.constant_lnco2_0:.3f} (R² = {r2:.3f})" if r2 is not None and isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
                 ax2.plot(x_fit, y_fit, '--', color='red', label=label)
             ax2.set_xlabel("Residence Time [s]")
             ax2.set_title(f'Cycle #{n} Kinetics Regression')
@@ -294,9 +293,9 @@ class CapacityAnalysis(QMainWindow):
         input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
         co2_input_flow_rate_molar = input_flow_rate_molar * float(self.analysis.reactor_input_ratio) / 100 #since the input is a %
         self.df['[CO2]']=self.df['yCO2']*reactor_pressure/gas_constant_r/reactor_temp_k
-        self.df['ln[CO2]'] = np.log(self.df['[CO2]'])
+        self.df['ln[CO2]'] = log(self.df['[CO2]'])
         self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2']* input_flow_rate_molar
-        self.df['CO2 Absorbed [mol]'] = np.maximum(
+        self.df['CO2 Absorbed [mol]'] = maximum(
             (co2_input_flow_rate_molar - self.df['CO2 Partial Flow Rate Out [mol/s]']) * self.df['TimeDiff'].dt.total_seconds(),
             0
         )
@@ -343,11 +342,11 @@ class CapacityAnalysis(QMainWindow):
             start_times.append(regression_start_time)
             end_times.append(regression_end_time)
             f_absorbed = f[(f.index > start_cut) & (f.index < regression_end_time)]
-            total_absorbed.append(np.sum(f_absorbed['CO2 Absorbed [mol]']))
+            total_absorbed.append(sum(f_absorbed['CO2 Absorbed [mol]']))
             min_gammas.append(f['yCO2'][f['yCO2'] > 0].min())
 
         #Push return lists to the cycle times dataframe
-        self.cycle_times_df['Sorption Duration'] = f'{np.subtract(end_cut, start_cut).total_seconds()/60:.3f} min'
+        self.cycle_times_df['Sorption Duration'] = f'{subtract(end_cut, start_cut).total_seconds()/60:.3f} min'
         self.cycle_times_df['Regression Start Time'] = start_times
         self.cycle_times_df['Regression End Time'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
@@ -374,12 +373,12 @@ class CapacityAnalysis(QMainWindow):
         input_flow_rate_meter = input_flow_rate_molar * 8.3145 * reactor_temp_k / reactor_pressure
         co2_flow_rate_sccm = input_flow_rate_sccm * float(self.analysis.reactor_input_ratio_input.text()) / 100
         co2_flow_rate_molar = co2_flow_rate_sccm * sccm_to_molar
-        reactor_area = np.pi*((float(self.analysis.reactor_diameter_input.text()) * inch_to_meter / 2)**2)
+        reactor_area = pi*((float(self.analysis.reactor_diameter_input.text()) * inch_to_meter / 2)**2)
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
-        packing_length_cm = sorbent_vol / (np.pi * (float(self.analysis.reactor_diameter_input.text()) * inch_to_meter * 50)**2)
+        packing_length_cm = sorbent_vol / (pi * (float(self.analysis.reactor_diameter_input.text()) * inch_to_meter * 50)**2)
         packing_volume = reactor_area * packing_length_cm / 100
         residence_time = packing_volume / input_flow_rate_meter
-        ah_before_reaction_gm3 = 6.112 * (np.e ** ((17.67*reactor_temp_c)/(reactor_temp_c+243.5))) * rh_before_reaction * h20_molar_mass / reactor_temp_k / 100 / 0.08314
+        ah_before_reaction_gm3 = 6.112 * (e ** ((17.67*reactor_temp_c)/(reactor_temp_c+243.5))) * rh_before_reaction * h20_molar_mass / reactor_temp_k / 100 / 0.08314
         ah_before_reaction = ah_before_reaction_gm3 / h20_molar_mass
         co2_fraction_before = float(self.analysis.reactor_input_ratio_input.text()) / 100
         #Below will be arrays if there are multiple cycles
@@ -388,7 +387,7 @@ class CapacityAnalysis(QMainWindow):
         ah_after_reaction = ah_before_reaction - co2_consumed
         co2_before_reaction = co2_flow_rate_molar / input_flow_rate_meter
         co2_after_reaction = co2_before_reaction - co2_consumed
-        rate_constant_k_dry = (np.log(co2_after_reaction / ah_after_reaction) - np.log(co2_before_reaction / ah_before_reaction)) / (ah_before_reaction - co2_before_reaction) / (-residence_time)
+        rate_constant_k_dry = (log(co2_after_reaction / ah_after_reaction) - log(co2_before_reaction / ah_before_reaction)) / (ah_before_reaction - co2_before_reaction) / (-residence_time)
         self.cycle_times_df['Rate Constant K (Dry)'] = rate_constant_k_dry
 
     #Calculate variables which rely on Regression Start Time and end
@@ -396,9 +395,9 @@ class CapacityAnalysis(QMainWindow):
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
         df = self.df
-        df['Accumulated CO2 Absorbed [mol]'] = np.nan
-        df['Volume of Active Sorbent [mL]'] = np.nan
-        df['Residence Time [s]'] = np.nan
+        df['Accumulated CO2 Absorbed [mol]'] = nan
+        df['Volume of Active Sorbent [mL]'] = nan
+        df['Residence Time [s]'] = nan
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
         co2_molar_mass = 44.01
         self.constant_lnco2_0 = 1.312488772
@@ -449,9 +448,8 @@ class CapacityAnalysis(QMainWindow):
                 # lnCO2_t0 = constant_lnco2_0  # Forced intercept
                 regression_r2 = r_value ** 2
             else:
-                rate_constant_k = np.nan
-                # lnCO2_t0 = np.nan
-                regression_r2 = np.nan
+                rate_constant_k = nan
+                regression_r2 = nan
             # Save to lists for this cycle
             rate_constants.append(rate_constant_k)
             # lnco2_t0s.append(lnCO2_t0)

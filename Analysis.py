@@ -1,11 +1,47 @@
 import sys
 import os
+os.environ['MPLCONFIGDIR'] = os.path.expanduser('~/.myapp_matplotlib_cache')
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller bundle."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+def user_data_path(filename):
+    """Return a user-writable path for persistent app data."""
+    if sys.platform == "darwin":
+        # macOS
+        app_support = os.path.expanduser('~/Library/Application Support/Mitico')
+    elif os.name == "nt":
+        # Windows
+        app_support = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'Mitico')
+    else:
+        # Linux/other
+        app_support = os.path.expanduser('~/.mitico')
+    if not os.path.exists(app_support):
+        os.makedirs(app_support, exist_ok=True)
+    return os.path.join(app_support, filename)
+
+# On startup, ensure user copy of run_parameters.csv exists
+BUNDLED_CSV = resource_path("run_parameters.csv")
+USER_CSV = user_data_path("run_parameters.csv")
+if not os.path.isfile(USER_CSV):
+    try:
+        import shutil
+        shutil.copy(BUNDLED_CSV, USER_CSV)
+    except Exception:
+        # If copy fails (e.g., missing in bundle), just create empty file
+        open(USER_CSV, 'a').close()
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QTabWidget, QGroupBox, QLineEdit, QMessageBox, QComboBox
+    QVBoxLayout, QHBoxLayout, QFileDialog, QTabWidget, QGroupBox, QLineEdit, QComboBox
 )
 import pandas as pd
-import numpy as np
 import csv
 from DataViewer import DataViewer
 from CapacityAnalysis import CapacityAnalysis
@@ -13,12 +49,6 @@ from TableViewer import TableViewer
 from FileParsers import MassSpecParser, BackendParser, Baldy2Parser
 from datetime import datetime
 from RawDataViewer import RawDataViewer
-from matplotlib.figure import Figure
-import io
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image, Spacer, Paragraph, PageBreak, KeepTogether
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
 
 class MyApp(QMainWindow):
     def __init__(self):
@@ -41,7 +71,6 @@ class MyApp(QMainWindow):
         self.qms_input_ratio = ""
         self.sorption_start = ""
         self.sorption_end = ""
-        self.parameters_saved_text = "Status: Reactor Parameters Loaded"
         self.viewer_instance = DataViewer(self)
         self.metrics_instance = TableViewer(self)
         self.cycle_instance = CapacityAnalysis(self)
@@ -62,7 +91,18 @@ class MyApp(QMainWindow):
 
     def load_run_parameters(self):
         """Load run parameters from a run_parameters.csv indexed by filename."""
-        csv_file = "run_parameters.csv"
+        csv_file = user_data_path("run_parameters.csv")
+        param_map = {
+            "Sorbent Mass [g]": (self.sorbent_mass_input, "sorbent_mass"),
+            "Reactor Diameter [in]": (self.reactor_diameter_input, "reactor_diameter"),
+            "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density"),
+            "Packing Factor": (self.packing_factor_input, "packing_factor"),
+            "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate"),
+            "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio"),
+            "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio"),
+            "Sorption Start (%)": (self.sorption_start_input, "sorption_start"),
+            "Sorption End (%)": (self.sorption_end_input, "sorption_end"),
+        }
         try:
             self.first_load = True  # Set before any field changes
             #Try to open and parse the file
@@ -74,17 +114,6 @@ class MyApp(QMainWindow):
                         #Find correct file entry and read values into input boxes and self params
                         if row["Filename"] == self.filename:
                             # Define mapping of CSV keys to (input widget, attribute name)
-                            param_map = {
-                                "Sorbent Mass [g]": (self.sorbent_mass_input, "sorbent_mass"),
-                                "Reactor Diameter [in]": (self.reactor_diameter_input, "reactor_diameter"),
-                                "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density"),
-                                "Packing Factor": (self.packing_factor_input, "packing_factor"),
-                                "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate"),
-                                "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio"),
-                                "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio"),
-                                "Sorption Start (%)": (self.sorption_start_input, "sorption_start"),
-                                "Sorption End (%)": (self.sorption_end_input, "sorption_end"),
-                            }
                             for key, (widget, attr) in param_map.items():
                                 value = row.get(key, "")
                                 widget.setText(value)
@@ -94,7 +123,14 @@ class MyApp(QMainWindow):
                             ref_gas = row.get("Reference Gas", "")
                             self.reference_gas_dropdown.setCurrentText(ref_gas)
                             self.reference_gas = ref_gas
+                            self.parameter_status.setText("Status: Run Parameters Loaded")
                             break #Once appropriate row has been found, stop iterating
+                        else: #Row not found, so default to an empty load
+                            print('setting empty')
+                            for _, (widget, attr) in param_map.items():
+                                setattr(self, attr, '')
+                                widget.setText('')
+                                self._last_committed_values[widget] = ''
             #Defaults for empty load
             if self.packing_factor_input.text() == '': 
                 self.packing_factor_input.setText('0.55')
@@ -114,7 +150,6 @@ class MyApp(QMainWindow):
             return
         #Reset status text, and default to no saving parameters
         self.parameter_status.setStyleSheet("")
-        self.parameter_status.setText(self.parameters_saved_text)
         self.save_parameters_button.setEnabled(False)
         
         #Change detection for gas dropdown
@@ -178,9 +213,22 @@ class MyApp(QMainWindow):
         self.metrics_instance.update_plot()
         self.raw_data_instance.update_table()
 
+    def update_cycles(self):
+        self.cycle_instance.cut_start()
+        self.cycle_instance.cut_end()
+        self.cycle_instance.calculate_secondary()
+        self.cycle_instance.calculate_sorption()    
+        self.cycle_instance.calculate_kinetics_wet()
+        self.cycle_instance.calculate_kinetics_dry()
+        self.cycle_instance.update_plots()
+        self.metrics_instance.reload_dropdown()
+        self.metrics_instance.update_table()
+        self.metrics_instance.update_plot()
+
+
     def save_run_parameters(self):
         """Save run parameters to run_parameters.csv indexed by filename."""
-        csv_file = "run_parameters.csv"
+        csv_file = user_data_path("run_parameters.csv")
         file_name = self.file_label.text()[6:]
         parameters = {
             "Save Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -211,8 +259,8 @@ class MyApp(QMainWindow):
                 # Write the parameters
                 writer.writerow([file_name] + list(parameters.values()))
             # Change status and propagate data
-            self.parameters_saved_text = "Status: Run Parameters Changed"
             self.load_run_parameters()
+            self.parameter_status.setText("Status: Run Parameters Saved")
         except Exception as e:
             pass
     
@@ -312,8 +360,18 @@ class MyApp(QMainWindow):
 
 
     def restart_analysis(self):
-        """Close the application and make a fresh instance"""
-        ##Need to implement
+        # Remove all tabs
+        self.tabs.clear()
+        # Create new instances
+        self.viewer_instance = DataViewer(self)
+        self.cycle_instance = CapacityAnalysis(self)
+        self.metrics_instance = TableViewer(self)
+        self.raw_data_instance = RawDataViewer(self)
+        # Add new tabs
+        self.tabs.addTab(self.viewer_instance, "Run Graph")
+        self.tabs.addTab(self.cycle_instance, "Cycle Graph")
+        self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
+        self.tabs.addTab(self.raw_data_instance, "Raw Data")
         
 
     def build_layout(self):

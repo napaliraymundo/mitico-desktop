@@ -5,30 +5,29 @@
 Download available in GitHub releases.
 
 ---
-
-## Steps to Compile and Build App Updates
+## Steps to Manually Compile and Build App Updates
+(App automatically builds for PC on github push)
 
 ### On Mac
 
+Download source code from github repository. Then in terminal:
 ```bash
+cd /path-to-your-download
 source venv/bin/activate
-pip install pyqt5 pandas numpy matplotlib reportlab
+python -m pip install --upgrade pip
 pip install pyinstaller
-python setup.py py2app
+pip install -r requirements.txt
+pyinstaller --onedir --windowed --icon=app.icns --add-data "run_parameters.csv:." Analysis.py 
 ```
+Builds are then located in dist/
 
 ### On PC
-```
+Download source code from github repository. Then in Command Prompt:
+```bash
+cd \path-to-your-download
 venv\Scripts\activate
-pip install pyqt5 pandas numpy matplotlib reportlab
 pip install pyinstaller
-pyinstaller  ^
-  --name Mitico ^
-  --onefile ^
-  --windowed ^
-  --icon=icon.ico ^
-  --hidden-import numpy.linalg ^
-  --hidden-import pandas._libs.tslibs.timedeltas ^
-  --hidden-import pandas._libs.window.aggregations
+pip install -r requirements.txt
+pyinstaller --onedir --windowed --icon=app.icns --add-data "run_parameters.csv;." Analysis.py
   ```
-  Builds are then located in dist/
+Builds are then located in dist/

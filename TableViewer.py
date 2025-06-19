@@ -3,9 +3,6 @@ from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import csv
 
 class TableViewer(QWidget):
     def __init__(self, analysis):
