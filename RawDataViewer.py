@@ -35,7 +35,7 @@ class RawDataViewer(QMainWindow):
                 else:
                     value_str = str(value)
                 self.table.setItem(i, j, QTableWidgetItem(value_str))
-        # table.resizeColumnsToContents()
+        self.table.resizeColumnsToContents()
         if df.shape[0] > 1000:
             note = QLabel(f"Showing first 1000 of {df.shape[0]} rows.")
             self.layout.addWidget(note)

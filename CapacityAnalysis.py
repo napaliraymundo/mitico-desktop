@@ -9,10 +9,12 @@ from scipy.stats import linregress
 
 class CapacityAnalysis(QMainWindow):
     def __init__(self, analysis):
+        super().__init__()
+
         self.analysis = analysis
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
-        super().__init__()
+
         self.setWindowTitle("Graph Cycle")
         screen_geometry = QApplication.desktop().screenGeometry()
         self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
@@ -75,7 +77,7 @@ class CapacityAnalysis(QMainWindow):
         sorption_start_layout.addWidget(self.sorption_start_override)
         sorption_start_layout.addStretch()
         cycle_groupbox_layout.addLayout(sorption_start_layout)
-        self.sorption_start_override.editingFinished.connect(self.cut_start)
+        self.sorption_start_override.editingFinished.connect(self.analysis.update_all_calculations)
 
         # Sorption End Override row (label + input)
         sorption_end_layout = QHBoxLayout()
@@ -86,7 +88,7 @@ class CapacityAnalysis(QMainWindow):
         sorption_end_layout.addWidget(self.sorption_end_override)
         sorption_end_layout.addStretch()
         cycle_groupbox_layout.addLayout(sorption_end_layout)
-        self.sorption_end_override.editingFinished.connect(self.cut_end)
+        self.sorption_end_override.editingFinished.connect(self.analysis.update_all_calculations)
 
         cycle_groupbox.setLayout(cycle_groupbox_layout)
         control_panel.addWidget(cycle_groupbox)
@@ -115,28 +117,41 @@ class CapacityAnalysis(QMainWindow):
         
     #Button functions to trim start of calculation
     def cut_start(self):
+        cycle_df= self.analysis.cycle_times_df
         try:
-            if self.sorption_start_override.text() == '':
-                self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
-                    self.cycle_times_df['Start'][self.current_cycle_index]
-            elif float(self.sorption_start_override.text()):
-                self.cycle_times_df['sorption_start_cut'][self.current_cycle_index] = \
-                    self.cycle_times_df['Start'][self.current_cycle_index]+ \
-                        pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
-                self.analysis.update_all_calculations()
+            if 'Sorption Start Time' in cycle_df.columns:
+                float_val = float(self.sorption_start_override.text())
+                start = cycle_df['Start'][self.current_cycle_index]
+                end = cycle_df['End'][self.current_cycle_index]
+                cut_time = start + pd.to_timedelta(float_val, unit='m')
+                self.analysis.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
+                    cut_time if (start < cut_time < end) else start
+            else:
+                self.analysis.cycle_times_df['Sorption Start Time'] = cycle_df['Start']
         except ValueError:
             pass
+        # try:
+        #     if self.sorption_start_override.text() == '':
+        #         self.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
+        #             self.cycle_times_df['Start'][self.current_cycle_index]
+        #     elif float(self.sorption_start_override.text()):
+        #         self.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
+        #             self.cycle_times_df['Start'][self.current_cycle_index]+ \
+        #                 pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
+        # except ValueError:
+        #     pass
     #Button function to trim end of calculation
     def cut_end(self):
+        cycle_df= self.analysis.cycle_times_df
         try:
-            if self.sorption_end_override.text() == '':
-                self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
-                    self.cycle_times_df['Start'][self.current_cycle_index]
-            elif float(self.sorption_end_override.text()):
-                self.cycle_times_df['sorption_end_cut'][self.current_cycle_index] = \
-                    self.cycle_times_df['Start'][self.current_cycle_index] + \
-                        pd.to_timedelta(float(self.sorption_end_override.text()),unit='m')
-                self.analysis.update_all_calculations()
+            if 'Sorption End Time' in cycle_df.columns:
+                float_val = float(self.sorption_end_override.text())
+                start = cycle_df['Start'][self.current_cycle_index]
+                end = cycle_df['End'][self.current_cycle_index]
+                cut_time = start + pd.to_timedelta(float_val, unit='m')
+                self.analysis.cycle_times_df['Sorption End Time'][self.current_cycle_index] = \
+                    cut_time if (start < cut_time < end) else end
+            else: self.analysis.cycle_times_df['Sorption End Time'] = cycle_df['End']
         except ValueError:
             pass
     #Button function to view previous cycle
@@ -165,8 +180,8 @@ class CapacityAnalysis(QMainWindow):
         self.figure1.clear()
         ax1 = self.figure1.add_subplot(111)
         n = self.cycle_numbers[self.current_cycle_index]
-        start_cut = self.cycle_times_df['sorption_start_cut'][n-1]
-        end_cut = self.cycle_times_df['sorption_end_cut'][n-1]
+        start_cut = self.cycle_times_df['Sorption Start Time'][n-1]
+        end_cut = self.cycle_times_df['Sorption End Time'][n-1]
         if 'No Completed Cycles' in self.df.columns:
             f = self.df[self.df['No Completed Cycles'] == n]
         else:
@@ -185,8 +200,8 @@ class CapacityAnalysis(QMainWindow):
                     ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60, f_cut_left[col], color='grey', linestyle=':')
                     ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60, f_cut_right[col], color='grey', linestyle=':')
         
-        regression_start_rel = (self.cycle_times_df['Sorption Integration Start'][n-1]-f.index[0]).total_seconds()/60
-        regression_end_rel = (self.cycle_times_df['Sorption Integration End'][n-1]-f.index[0]).total_seconds()/60
+        regression_start_rel = (self.cycle_times_df['Regression Start Time'][n-1]-f.index[0]).total_seconds()/60
+        regression_end_rel = (self.cycle_times_df['Regression End Time'][n-1]-f.index[0]).total_seconds()/60
         sorption_start_rel = (f_center.index[0] - f.index[0]).total_seconds()/60
         sorption_end_rel = (f_center.index[-1] - f.index[0]).total_seconds()/60
         # Get colors from plotted lines for yCO2 and Residence Time [s]
@@ -225,15 +240,15 @@ class CapacityAnalysis(QMainWindow):
         self.figure2.clear()
         ax2 = self.figure2.add_subplot(111)
         # Retrim
-        start_cut = self.cycle_times_df['Sorption Integration Start'][n-1]
-        end_cut = self.cycle_times_df['Sorption Integration End'][n-1]
+        start_cut = self.cycle_times_df['Regression Start Time'][n-1]
+        end_cut = self.cycle_times_df['Regression End Time'][n-1]
         f_center = f[(f.index > start_cut) & (f.index < end_cut)]
         if 'Accumulated CO2 Absorbed [mol]' in f.columns:
             ax2.plot(f_center['Residence Time [s]'], f_center['ln[CO2]'], label=f'Cycle #{n}')
             # Plot the fitted line from cycle_times_df
-            k = self.cycle_times_df['rate_constant_k'][n-1]
+            k = self.cycle_times_df['Rate Constant K (Wet)'][n-1]
             # lnco2_t0 = self.cycle_times_df['lnCO2_t0'][n-1]
-            r2 = self.cycle_times_df['regression_r2'][n-1] if 'regression_r2' in self.cycle_times_df.columns else None
+            r2 = self.cycle_times_df['Wet Kinetics Regression R2'][n-1] if 'Wet Kinetics Regression R2' in self.cycle_times_df.columns else None
             if np.isfinite(k): #and np.isfinite(lnco2_t0):
                 x_fit = f_center['Residence Time [s]'].values
                 y_fit = (-k * x_fit) +  self.constant_lnco2_0 #lnco2_t0  # Correct sign for -k
@@ -264,6 +279,7 @@ class CapacityAnalysis(QMainWindow):
         ref_gas = self.analysis.reference_gas_dropdown.currentText()
         gas_abbr = self.analysis.gas_abbr  # Use the lookup from analysis
         abbr = gas_abbr.get(ref_gas, ref_gas)
+
         if ref_gas in self.df.columns:
             self.df['CO2 / ' + abbr] = self.df['Carbon dioxide'] / self.df[ref_gas]
             co2_ref_col = 'CO2 / ' + abbr
@@ -295,55 +311,88 @@ class CapacityAnalysis(QMainWindow):
 
     #Calculate variables which rely on df and cycle_times_df
     def calculate_sorption(self):
+        #Refresh dataframes
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
-        # Initialize columns to empty if they don't exist
-        if 'sorption_start_cut' not in self.cycle_times_df.columns:
-            self.cycle_times_df['sorption_start_cut'] = self.cycle_times_df['Start']
-        if 'sorption_end_cut' not in self.cycle_times_df.columns:
-            self.cycle_times_df['sorption_end_cut'] = self.cycle_times_df['End']
-
+       
+        #Preliminary calculations
         co2_molar_mass = 44.01
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
+        sorbent_mass = float(self.analysis.sorbent_mass_input.text())
+        regression_start_percent = float(self.analysis.sorption_start_input.text())/100
+        regression_end_percent = float(self.analysis.sorption_end_input.text())/100
+        
+        #Instantiate return lists
         start_times = []
         end_times = []
         min_gammas = []
         total_absorbed = []
-        sorbent_mass = float(self.analysis.sorbent_mass_input.text())
-        sorption_start_threshold = float(self.analysis.sorption_start_input.text())/100
-        sorption_end_threshold = float(self.analysis.sorption_end_input.text())/100
 
+        #Calculate capacity for each cycle in the run
         for n in self.cycle_numbers:
             #Prep data frame
             f = self.df
             if 'Cycle Identifier' in self.df.columns:
                 f = self.df[(self.df['Cycle Identifier'] == 3) & (self.df['No Completed Cycles'] == n)]
             #Cut the single cycle dataframe based on sorption_start/end_cut
-            start_cut = self.cycle_times_df['sorption_start_cut'][n-1]
-            end_cut = self.cycle_times_df['sorption_end_cut'][n-1]
+            start_cut = self.cycle_times_df['Sorption Start Time'][n-1]
+            end_cut = self.cycle_times_df['Sorption End Time'][n-1]
             f = f[(f.index > start_cut) & (f.index < end_cut)]
-            
-            t_start = f[f['yCO2'] > sorption_start_threshold].index.min()
-            t_end = f[(f['yCO2'] > sorption_end_threshold) & (f.index > t_start)].index.min()
-            f_cut = f[(f.index >= t_start) & (f.index <= t_end)]
-            min_y = f_cut['yCO2'].min()
-            total_absorbed.append(np.sum(f['CO2 Absorbed [mol]']))
-            start_times.append(t_start)
-            end_times.append(t_end)
-            min_gammas.append(min_y)
+            regression_start_time = f[f['yCO2'] > regression_start_percent].index.min()
+            regression_end_time = f[(f['yCO2'] > regression_end_percent) & (f.index > regression_start_time)].index.min()
+            start_times.append(regression_start_time)
+            end_times.append(regression_end_time)
+            f_absorbed = f[(f.index > start_cut) & (f.index < regression_end_time)]
+            total_absorbed.append(np.sum(f_absorbed['CO2 Absorbed [mol]']))
+            min_gammas.append(f['yCO2'][f['yCO2'] > 0].min())
 
-        self.cycle_times_df['Sorption Integration Start'] = start_times
-        self.cycle_times_df['Sorption Integration End'] = end_times
+        #Push return lists to the cycle times dataframe
+        self.cycle_times_df['Sorption Duration'] = f'{np.subtract(end_cut, start_cut).total_seconds()/60:.3f} min'
+        self.cycle_times_df['Regression Start Time'] = start_times
+        self.cycle_times_df['Regression End Time'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
-        self.cycle_times_df['Sorption Duration'] = np.subtract(end_cut, start_cut)
         self.cycle_times_df['Experimental CO2absorbed [mol]'] = total_absorbed
         self.cycle_times_df['Experimental CO2absorbed [g]'] = self.cycle_times_df['Experimental CO2absorbed [mol]'] * co2_molar_mass
         self.cycle_times_df['Sorbent Capacity [gCO2/gSorbent]'] = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_mass
         self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_vol
-        self.cycle_times_df['Capacity % to KPI'] = self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] / 0.0283
+        self.cycle_times_df['Capacity % to KPI'] = self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] / 0.0283 #constant pulled from sheet
 
-    #Calculate variables which rely on sorption integration start and end
-    def calculate_kinetics(self):
+    def calculate_kinetics_dry(self):
+        self.analysis = self.analysis
+        self.df = self.analysis.mdf
+        self.cycle_times_df = self.analysis.cycle_times_df
+        reactor_pressure = 101325 #pa
+        reactor_temp_c = 55
+        reactor_temp_k = reactor_temp_c + 273
+        gas_constant_r = 8.3145
+        rh_before_reaction = 100
+        h20_molar_mass = 18.02
+        inch_to_meter = 0.0254
+        sccm_to_molar = reactor_pressure * (1e-6) / (60) / gas_constant_r / 273.15
+        input_flow_rate_sccm = float(self.analysis.input_flow_rate_input.text())
+        input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
+        input_flow_rate_meter = input_flow_rate_molar * 8.3145 * reactor_temp_k / reactor_pressure
+        co2_flow_rate_sccm = input_flow_rate_sccm * float(self.analysis.reactor_input_ratio_input.text()) / 100
+        co2_flow_rate_molar = co2_flow_rate_sccm * sccm_to_molar
+        reactor_area = np.pi*((float(self.analysis.reactor_diameter_input.text()) * inch_to_meter / 2)**2)
+        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
+        packing_length_cm = sorbent_vol / (np.pi * (float(self.analysis.reactor_diameter_input.text()) * inch_to_meter * 50)**2)
+        packing_volume = reactor_area * packing_length_cm / 100
+        residence_time = packing_volume / input_flow_rate_meter
+        ah_before_reaction_gm3 = 6.112 * (np.e ** ((17.67*reactor_temp_c)/(reactor_temp_c+243.5))) * rh_before_reaction * h20_molar_mass / reactor_temp_k / 100 / 0.08314
+        ah_before_reaction = ah_before_reaction_gm3 / h20_molar_mass
+        co2_fraction_before = float(self.analysis.reactor_input_ratio_input.text()) / 100
+        #Below will be arrays if there are multiple cycles
+        co2_fraction_after = self.cycle_times_df['Highest Sorption Point']
+        co2_consumed = co2_flow_rate_molar * (co2_fraction_before - co2_fraction_after) / co2_fraction_before / input_flow_rate_meter
+        ah_after_reaction = ah_before_reaction - co2_consumed
+        co2_before_reaction = co2_flow_rate_molar / input_flow_rate_meter
+        co2_after_reaction = co2_before_reaction - co2_consumed
+        rate_constant_k_dry = (np.log(co2_after_reaction / ah_after_reaction) - np.log(co2_before_reaction / ah_before_reaction)) / (ah_before_reaction - co2_before_reaction) / (-residence_time)
+        self.cycle_times_df['Rate Constant K (Dry)'] = rate_constant_k_dry
+
+    #Calculate variables which rely on Regression Start Time and end
+    def calculate_kinetics_wet(self):
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
         df = self.df
@@ -365,8 +414,8 @@ class CapacityAnalysis(QMainWindow):
             else:
                 f = df
             #Masking from beginning of sorption to end of integration
-            start_time = cycle_times_df['sorption_start_cut'][n-1]
-            end_time = cycle_times_df['Sorption Integration End'][n-1]
+            start_time = cycle_times_df['Sorption Start Time'][n-1]
+            end_time = cycle_times_df['Regression End Time'][n-1]
             mask = (f.index >= start_time) & (f.index <= end_time)
             # Compute cumulative sum for the masked slice
             absorbed_cumsum = f.loc[mask, 'CO2 Absorbed [mol]'].cumsum()
@@ -383,8 +432,8 @@ class CapacityAnalysis(QMainWindow):
             df.loc[f.loc[mask].index, 'Residence Time [s]'] = residence_time
 
             # Further trim the area to within the regression region
-            start_time = cycle_times_df['Sorption Integration Start'][n-1]
-            end_time = cycle_times_df['Sorption Integration End'][n-1]
+            start_time = cycle_times_df['Regression Start Time'][n-1]
+            end_time = cycle_times_df['Regression End Time'][n-1]
 
             f = f[(f.index > start_time) & (f.index < end_time)]
             # Linear regression: ln[CO2] = -k*t + intercept
@@ -408,9 +457,9 @@ class CapacityAnalysis(QMainWindow):
             # lnco2_t0s.append(lnCO2_t0)
             r2s.append(regression_r2)
         # Save to cycle_times_df for all cycles
-        self.cycle_times_df['rate_constant_k'] = rate_constants
+        self.cycle_times_df['Rate Constant K (Wet)'] = rate_constants
         # self.cycle_times_df['lnCO2_t0'] = lnco2_t0s
-        self.cycle_times_df['regression_r2'] = r2s
+        self.cycle_times_df['Wet Kinetics Regression R2'] = r2s
         return
 
     def setup_metric_selector(self):

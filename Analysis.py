@@ -164,9 +164,12 @@ class MyApp(QMainWindow):
         return True
     
     def update_all_calculations(self):
+        self.cycle_instance.cut_start()
+        self.cycle_instance.cut_end()
         self.cycle_instance.calculate_secondary()
         self.cycle_instance.calculate_sorption()    
-        self.cycle_instance.calculate_kinetics()
+        self.cycle_instance.calculate_kinetics_wet()
+        self.cycle_instance.calculate_kinetics_dry()
         self.cycle_instance.update_plots()
         self.viewer_instance.update_data()
         self.viewer_instance.update_plot()
@@ -461,9 +464,9 @@ class MyApp(QMainWindow):
         # RUN ANALYSIS SECTION
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.North)
-        self.tabs.addTab(self.viewer_instance, "Graph Run")
-        self.tabs.addTab(self.cycle_instance,"Graph Cycle")
-        self.tabs.addTab(self.metrics_instance, "View Metrics")
+        self.tabs.addTab(self.viewer_instance, "Run Graph")
+        self.tabs.addTab(self.cycle_instance,"Cycle Graph")
+        self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
         self.tabs.addTab(self.raw_data_instance, "Raw Data")
 
         self.save_pdf_button = QPushButton("Save Full PDF Report")

@@ -59,20 +59,22 @@ class TableViewer(QWidget):
     def update_table(self):
         df = self.analysis.cycle_times_df
         self.table.clear()
-        self.table.setRowCount(df.shape[0])
-        self.table.setColumnCount(df.shape[1])
-        self.table.setHorizontalHeaderLabels([str(col) for col in df.columns])
+        self.table.setRowCount(df.shape[1])
+        self.table.setColumnCount(df.shape[0])
+        self.table.setVerticalHeaderLabels([str(col) for col in df.columns])
         for i in range(df.shape[0]):
             for j, col in enumerate(df.columns):
                 value = df.iloc[i][col]
                 # Format float to 4 decimals, datetime to short string, else str
                 if isinstance(value, float):
-                    value_str = f"{value:.4f}"
+                    value_str = f"{value:.4e}"
                 elif pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, pd.Timestamp):
                     value_str = pd.to_datetime(value).strftime('%m-%d %H:%M')
                 else:
                     value_str = str(value)
-                self.table.setItem(i, j, QTableWidgetItem(value_str))
+                self.table.setItem(j, i, QTableWidgetItem(value_str))
+        self.table.resizeColumnsToContents()
+        self.table.removeRow(0)
 
     def reload_dropdown(self):
         self.param_list.clear()
