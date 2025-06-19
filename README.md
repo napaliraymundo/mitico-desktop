@@ -14,7 +14,7 @@ Download available in GitHub releases.
 source venv/bin/activate
 pip install pyqt5 pandas numpy matplotlib reportlab
 pip install pyinstaller
-python  py2app
+python setup.py py2app
 ```
 
 ### On PC
@@ -31,3 +31,4 @@ pyinstaller  ^
   --hidden-import pandas._libs.tslibs.timedeltas ^
   --hidden-import pandas._libs.window.aggregations
   ```
+  Builds are then located in dist/
