@@ -1,6 +1,7 @@
 # mitico-desktop
 
-**Data Analysis App for Mitico Reactors**  
+**Data Analysis App for Mitico Reactors**    
+  [GitHub Repository](https://github.com/napaliraymundo/mitico-desktop)  
 Download available in GitHub releases.
 
 ---
@@ -14,7 +15,10 @@ source venv/bin/activate
 pip install pyqt5 pandas numpy matplotlib reportlab
 pip install pyinstaller
 python  py2app
+```
 
+### On PC
+```
 venv\Scripts\activate
 pip install pyqt5 pandas numpy matplotlib reportlab
 pip install pyinstaller
@@ -26,3 +30,4 @@ pyinstaller  ^
   --hidden-import numpy.linalg ^
   --hidden-import pandas._libs.tslibs.timedeltas ^
   --hidden-import pandas._libs.window.aggregations
+  ```
