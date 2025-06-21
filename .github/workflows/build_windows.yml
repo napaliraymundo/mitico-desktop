@@ -57,7 +57,8 @@ jobs:
       # -------------------------
       # Variant 3: SFX .exe
       # -------------------------
-      - name: Create 7-Zip SFX (if tools available)
+      - name: Create 7-Zip SFX
+        shell: cmd
         run: |
           mkdir sfx
           xcopy /E /I /Y dist\Analysis sfx\
