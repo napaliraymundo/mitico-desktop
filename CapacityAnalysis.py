@@ -3,8 +3,9 @@ from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import pandas as pd
-from numpy import nan, sum, maximum, isfinite, pi, e, log, subtract
+from numpy import nan, sum, maximum, isfinite, pi, e, log, subtract, number, floor, log10
 from scipy.stats import linregress
+import ast
 
 class CapacityAnalysis(QMainWindow):
     def __init__(self, analysis):
@@ -97,20 +98,30 @@ class CapacityAnalysis(QMainWindow):
         self.ax1_param_list.setSelectionMode(QListWidget.MultiSelection)
         # List of available ax1 elements
         self.ax1_elements = [
-            ('yCO2', 'yCO2'),
+            ('yCO2 [%]', 'yCO2 [%]'),
             ('[CO2]', '[CO2]'),
             ('ln[CO2]', 'ln[CO2]'),
             ('Residence Time [s]', 'Residence Time [s]'),
         ]
         for label, col in self.ax1_elements:
             self.ax1_param_list.addItem(label)
-        # Select all items by default
+        # Default to only yCO2 on
         for i in range(self.ax1_param_list.count()):
-            self.ax1_param_list.item(i).setSelected(True)
+            if self.ax1_param_list.item(i).text() == ('yCO2 [%]' or 'Residence Time [s]'):
+                self.ax1_param_list.item(i).setSelected(True)
+            else:
+                self.ax1_param_list.item(i).setSelected(False)
         # Add to right control panel
         control_panel.addWidget(QLabel("Cycle Plot Elements"))
         control_panel.addWidget(self.ax1_param_list)
         self.ax1_param_list.itemSelectionChanged.connect(self.update_plots)
+
+        # === Add Scaling Factors Checkbox ===
+        self.scaling_checkbox = QPushButton("Apply Scaling Factors (Sorption Range)")
+        self.scaling_checkbox.setCheckable(True)
+        self.scaling_checkbox.setChecked(False)
+        control_panel.addWidget(self.scaling_checkbox)
+        self.scaling_checkbox.toggled.connect(self.update_plots)
 
         main_layout.addLayout(control_panel, stretch=0)
         
@@ -129,16 +140,7 @@ class CapacityAnalysis(QMainWindow):
                 self.analysis.cycle_times_df['Sorption Start Time'] = cycle_df['Start']
         except ValueError:
             pass
-        # try:
-        #     if self.sorption_start_override.text() == '':
-        #         self.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
-        #             self.cycle_times_df['Start'][self.current_cycle_index]
-        #     elif float(self.sorption_start_override.text()):
-        #         self.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
-        #             self.cycle_times_df['Start'][self.current_cycle_index]+ \
-        #                 pd.to_timedelta(float(self.sorption_start_override.text()),unit='m')
-        # except ValueError:
-        #     pass
+
     #Button function to trim end of calculation
     def cut_end(self):
         cycle_df= self.analysis.cycle_times_df
@@ -153,6 +155,7 @@ class CapacityAnalysis(QMainWindow):
             else: self.analysis.cycle_times_df['Sorption End Time'] = cycle_df['End']
         except ValueError:
             pass
+
     #Button function to view previous cycle
     def select_prev_cycle(self):
         if self.current_cycle_index > 0:
@@ -161,6 +164,7 @@ class CapacityAnalysis(QMainWindow):
             self.sorption_start_override.clear()
             self.sorption_end_override.clear()
             self.update_plots()
+
     #Button function to view next cycle
     def select_next_cycle(self):
         if self.current_cycle_index < len(self.cycle_numbers) - 1:
@@ -169,13 +173,21 @@ class CapacityAnalysis(QMainWindow):
             self.sorption_start_override.clear()
             self.sorption_end_override.clear()
             self.update_plots()
+            
+    #Calculate scaling factors for selected columns based on sorption range
+    def calculate_scaling_factors(self, f, selected_cols, sorption_start, sorption_end):
+        # Only describe numeric columns in the sorption range
+        describe_df = f.loc[(f.index >= sorption_start) & (f.index <= sorption_end), selected_cols].select_dtypes(include=[number]).describe()
+        scaling = (describe_df.loc['max']).apply(
+            lambda x: 10**(floor(log10(abs(x)))) if x != 0 else 1
+        ).fillna(1)
+        return scaling.to_dict()
+
     #Reload graphs on parameter or input change
     def update_plots(self):
         #Setup
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
-
-        #Plot 1
         self.figure1.clear()
         ax1 = self.figure1.add_subplot(111)
         n = self.cycle_numbers[self.current_cycle_index]
@@ -191,11 +203,26 @@ class CapacityAnalysis(QMainWindow):
 
         # Get selected ax1 elements
         selected_labels = [item.text() for item in self.ax1_param_list.selectedItems()]
+        selected_cols = [col for label, col in self.ax1_elements if label in selected_labels and col in f_center.columns]
+
+        use_scaling = self.scaling_checkbox.isChecked()
+        scaling_factors = None
+        if use_scaling and selected_cols:
+            ax1.set_ylim(-2,12)
+            scaling_factors = {}
+            for col in selected_cols:
+                scaling_factors[col] = self.calculate_scaling_factors(f, [col], start_cut, end_cut).get(col, 1)
         for label, col in self.ax1_elements:
             if label in selected_labels and col in f_center.columns:
-                ax1.plot((f_center.index - f.index[0]).total_seconds()/60, f_center[col], label=label)
+                ydata = f_center[col]
+                if use_scaling and scaling_factors and col in scaling_factors:
+                    ydata = ydata / scaling_factors[col]
+                    plot_label = f"{label} / {scaling_factors[col]:.2f}"
+                else:
+                    plot_label = label
+                ax1.plot((f_center.index - f.index[0]).total_seconds()/60, ydata, label=plot_label)
                 # Optionally plot cut regions for yCO2 only
-                if col == 'yCO2':
+                if col == 'yCO2 [%]':
                     ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60, f_cut_left[col], color='grey', linestyle=':')
                     ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60, f_cut_right[col], color='grey', linestyle=':')
         
@@ -208,7 +235,7 @@ class CapacityAnalysis(QMainWindow):
         residence_time_color = None
         for line in ax1.get_lines():
             label = line.get_label()
-            if label == 'yCO2': yco2_color = line.get_color()
+            if label == 'yCO2 [%]': yco2_color = line.get_color()
             elif label == 'Residence Time [s]': residence_time_color = line.get_color()
         # Fallback to default colors if not found
         if yco2_color is None:
@@ -288,13 +315,13 @@ class CapacityAnalysis(QMainWindow):
             co2_ref_col = 'CO2 / N2'
 
         correction = float(self.analysis.reactor_input_ratio)/float(self.analysis.qms_input_ratio)  
-        self.df['yCO2'] = self.df[co2_ref_col] * correction
+        self.df['yCO2 [%]'] = self.df[co2_ref_col] * correction * 100
         input_flow_rate_sccm = float(self.analysis.input_flow_rate)
         input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
         co2_input_flow_rate_molar = input_flow_rate_molar * float(self.analysis.reactor_input_ratio) / 100 #since the input is a %
-        self.df['[CO2]']=self.df['yCO2']*reactor_pressure/gas_constant_r/reactor_temp_k
+        self.df['[CO2]']=self.df['yCO2 [%]']/100*reactor_pressure/gas_constant_r/reactor_temp_k
         self.df['ln[CO2]'] = log(self.df['[CO2]'])
-        self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2']* input_flow_rate_molar
+        self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2 [%]']/100* input_flow_rate_molar
         self.df['CO2 Absorbed [mol]'] = maximum(
             (co2_input_flow_rate_molar - self.df['CO2 Partial Flow Rate Out [mol/s]']) * self.df['TimeDiff'].dt.total_seconds(),
             0
@@ -302,7 +329,7 @@ class CapacityAnalysis(QMainWindow):
         
         self.analysis.mdf = self.df
         self.analysis.cycle_times_df = self.cycle_times_df
-        for param in [co2_ref_col, 'yCO2', '[CO2]', 'ln[CO2]', 'CO2 Partial Flow Rate Out [mol/s]', 'CO2 Absorbed [mol]']:
+        for param in [co2_ref_col, 'yCO2 [%]', '[CO2]', 'ln[CO2]', 'CO2 Partial Flow Rate Out [mol/s]', 'CO2 Absorbed [mol]']:
             if param not in self.analysis.other_parameters:
                 self.analysis.other_parameters.append(param)
         self.analysis.viewer_instance.update_plot()
@@ -326,6 +353,7 @@ class CapacityAnalysis(QMainWindow):
         end_times = []
         min_gammas = []
         total_absorbed = []
+        duration_seconds = []
 
         #Calculate capacity for each cycle in the run
         for n in self.cycle_numbers:
@@ -337,16 +365,21 @@ class CapacityAnalysis(QMainWindow):
             start_cut = self.cycle_times_df['Sorption Start Time'][n-1]
             end_cut = self.cycle_times_df['Sorption End Time'][n-1]
             f = f[(f.index > start_cut) & (f.index < end_cut)]
-            regression_start_time = f[f['yCO2'] > regression_start_percent].index.min()
-            regression_end_time = f[(f['yCO2'] > regression_end_percent) & (f.index > regression_start_time)].index.min()
+            regression_start_time = f[f['yCO2 [%]']/100 > regression_start_percent].index.min()
+            regression_end_time = f[(f['yCO2 [%]']/100 > regression_end_percent) & (f.index > regression_start_time)].index.min()
             start_times.append(regression_start_time)
             end_times.append(regression_end_time)
             f_absorbed = f[(f.index > start_cut) & (f.index < regression_end_time)]
             total_absorbed.append(sum(f_absorbed['CO2 Absorbed [mol]']))
-            min_gammas.append(f['yCO2'][f['yCO2'] > 0].min())
+            min_gammas.append(f['yCO2 [%]'][f['yCO2 [%]'] > 0].min()/100)
+            duration_seconds.append((end_cut - start_cut).total_seconds())
 
         #Push return lists to the cycle times dataframe
-        self.cycle_times_df['Sorption Duration'] = f'{subtract(end_cut, start_cut).total_seconds()/60:.3f} min'
+        sorption_durations = [
+            f"{int(ds // 3600)}:{int((ds % 3600) // 60):02d}:{int(ds % 60):02d}" if pd.notna(ds) else nan
+            for ds in duration_seconds
+        ]
+        self.cycle_times_df['Sorption Duration'] = sorption_durations
         self.cycle_times_df['Regression Start Time'] = start_times
         self.cycle_times_df['Regression End Time'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
@@ -467,6 +500,14 @@ class CapacityAnalysis(QMainWindow):
         # Select all metrics by default
         for i in range(self.metric_selector.count()):
             self.metric_selector.item(i).setSelected(True)
+
+    def load_row(self):
+        if self.analysis.loaded_row != '':
+            cycle_plot_elements = ast.literal_eval(self.analysis.loaded_row.get('Cycle Plot Elements', []))
+            for i in range(self.ax1_param_list.count()):
+                self.ax1_param_list.item(i).setSelected(self.ax1_param_list.item(i).text() in cycle_plot_elements)
+            scale_cycle_graph = bool(ast.literal_eval(self.analysis.loaded_row.get('Scale Cycle Graph', 'False')))
+            self.scaling_checkbox.setChecked(scale_cycle_graph)
     
     def get_all_figures_for_pdf(self):
         """Return a list of matplotlib Figure objects for all cycles (both ax1 and ax2 plots)."""

@@ -148,3 +148,209 @@ class BackendParser:
         # Convert the list of dictionaries to a DataFrame
         cycle_times_df = pd.DataFrame(cycle_times)
         return df, reactor_parameters, cycle_times_df
+    
+def save_pdf_report(analysis):
+    """Export a PDF report with run parameters, cycle_times_df, and all current plot images."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak, KeepTogether
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    import io
+
+    # Prompt user for save location
+    from PyQt5.QtWidgets import QFileDialog, QMessageBox
+    file_path, _ = QFileDialog.getSaveFileName(analysis, "Save PDF Report", f"{analysis.filename} Exp Report.pdf", "PDF Files (*.pdf)")
+    if not file_path:
+        return
+    if not file_path.lower().endswith('.pdf'):
+        file_path += '.pdf'
+
+    # Prepare document
+    page_width, page_height = letter
+    left_margin = right_margin = top_margin = bottom_margin = 24
+    doc = SimpleDocTemplate(
+        file_path,
+        pagesize=letter,
+        leftMargin=left_margin,
+        rightMargin=right_margin,
+        topMargin=top_margin,
+        bottomMargin=bottom_margin
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+    styleN = styles['Normal']
+    styleH = styles['Heading2']
+
+    # 1. Run Parameters Table with header row
+    elements.append(Paragraph("Run Parameters", styleH))
+    param_map = [
+        ("Sorbent Mass [g]", analysis.sorbent_mass_input.text()),
+        ("Reactor Diameter [in]", analysis.reactor_diameter_input.text()),
+        ("Sorbent Bulk Density [g/mL]", analysis.bulk_density_input.text()),
+        ("Packing Factor", analysis.packing_factor_input.text()),
+        ("Input Flow Rate [SCCM]", analysis.input_flow_rate_input.text()),
+        ("Reference Gas", analysis.reference_gas_dropdown.currentText()),
+        ("Reactor Input Ratio (%)", analysis.reactor_input_ratio_input.text()),
+        ("QMS Input Ratio (%)", analysis.qms_input_ratio_input.text()),
+        ("Sorption Start (%)", analysis.sorption_start_input.text()),
+        ("Sorption End (%)", analysis.sorption_end_input.text()),
+    ]
+    param_table_data = [["Parameter", "Value"]] + [[k, v] for k, v in param_map]
+    param_table = Table(param_table_data, hAlign='LEFT', colWidths=[160, 80])
+    param_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    elements.append(param_table)
+    elements.append(Spacer(1, 12))
+
+    # 2. cycle_times_df Table (vertical, 5 cycles per table, 3 sig figs, sci notation, short datetimes, wide metric col)
+    if analysis.cycle_times_df is not None and not analysis.cycle_times_df.empty:
+        elements.append(Paragraph("Cycle Times Table", styleH))
+        df = analysis.cycle_times_df.reset_index(drop=True)
+        import pandas as pd
+        def fmt(x, col=None):
+            if isinstance(x, float):
+                return f"{x:.2e}" if x != 0 else "0"
+            if col == 'Sorption Duration':
+                try:
+                    if pd.isnull(x):
+                        return ""
+                    if isinstance(x, pd.Timedelta):
+                        total_seconds = int(x.total_seconds())
+                    else:
+                        total_seconds = int(pd.to_timedelta(x).total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    return f"{hours:02}:{minutes:02}:{seconds:02}"
+                except Exception:
+                    return str(x)
+            if isinstance(x, pd.Timestamp) or (hasattr(x, 'isoformat') and 'T' in str(x)):
+                try:
+                    return pd.to_datetime(x).strftime('%H:%M:%S')
+                except Exception:
+                    return str(x)
+            if isinstance(x, str) and (':' in x and '-' in x):
+                try:
+                    return pd.to_datetime(x).strftime('%H:%M:%S')
+                except Exception:
+                    return x
+            return str(x)
+        n_cycles = df.shape[0]
+        col_names = [str(c) for c in df.columns]
+        for start in range(0, n_cycles, 5):
+            end = min(start+5, n_cycles)
+            cycles = df.iloc[start:end]
+            header = ["Metric"] + [f"Cycle {int(c)}" for c in cycles['Cycle']]
+            data = [header]
+            for col in col_names:
+                if col == 'Cycle':
+                    continue
+                row = [col]
+                for i in range(start, end):
+                    val = df.at[i, col]
+                    row.append(fmt(val, col=col))
+                data.append(row)
+            for row in data:
+                while len(row) < 6:
+                    row.append("")
+            table = Table(data, hAlign='LEFT', colWidths=[200]+[60]*5, repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ]))
+            elements.append(table)
+            elements.append(Spacer(1, 8))
+
+    # 3. All current plot images (including all cycles in cycle viewer)
+    buffers = []  # Keep references to all image buffers until PDF is built
+    full_plot_width = page_width - left_margin - right_margin
+    full_plot_height = full_plot_width * 0.45  # Slightly shorter to fit two per page
+    if hasattr(analysis, 'cycle_instance') and analysis.cycle_instance is not None:
+        try:
+            figures = analysis.cycle_instance.get_all_figures_for_pdf()
+        except Exception:
+            figures = []
+        if figures:
+            elements.append(Paragraph("Cycle Analysis Plots", styleH))
+            plot_pairs = [figures[i:i+2] for i in range(0, len(figures), 2)]
+            for pair in plot_pairs:
+                imgs = []
+                for fig in pair:
+                    for ax in fig.get_axes():
+                        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
+                            item.set_fontsize(8)
+                    buf = io.BytesIO()
+                    fig.set_size_inches(full_plot_width / 96, full_plot_height / 96)
+                    fig.savefig(buf, format='png', bbox_inches='tight', dpi=500)
+                    buf.seek(0)
+                    img = Image(buf, width=full_plot_width, height=full_plot_height)
+                    imgs.append(img)
+                    buffers.append(buf)
+                elements.append(KeepTogether(imgs))
+                elements.append(Spacer(1, 12))
+                elements.append(PageBreak())
+
+    # Add DataViewer plot if available (make it full page)
+    if hasattr(analysis, 'viewer_instance') and analysis.viewer_instance is not None:
+        try:
+            fig = analysis.viewer_instance.figure
+            for ax in fig.get_axes():
+                for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
+                    item.set_fontsize(8)
+            buf = io.BytesIO()
+            fig.set_size_inches(full_plot_width / 96, (full_plot_width * 0.6) / 96)
+            fig.savefig(buf, format='png', bbox_inches='tight', dpi=500)
+            buf.seek(0)
+            img = Image(buf, width=full_plot_width, height=full_plot_width * 0.6)
+            elements.append(Paragraph("Full Run Data Plot", styleH))
+            elements.append(img)
+            elements.append(Spacer(1, 12))
+            buffers.append(buf)
+            elements.append(PageBreak())
+        except Exception:
+            pass
+
+    # Add MetricsViewer plot if available (make it full page)
+    if hasattr(analysis, 'metrics_instance') and analysis.metrics_instance is not None:
+        try:
+            fig = analysis.metrics_instance.figure
+            for ax in fig.get_axes():
+                for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
+                    item.set_fontsize(8)
+            buf = io.BytesIO()
+            fig.set_size_inches(full_plot_width / 96, (full_plot_width * 0.6) / 96)
+            fig.savefig(buf, format='png', bbox_inches='tight', dpi=500)
+            buf.seek(0)
+            img = Image(buf, width=full_plot_width, height=full_plot_width * 0.6)
+            elements.append(Paragraph("Metrics Table Plot", styleH))
+            elements.append(img)
+            elements.append(Spacer(1, 12))
+            buffers.append(buf)
+            # Only add a PageBreak if this is not the last element
+            # Remove the unconditional PageBreak here
+        except Exception:
+            pass
+
+    # Remove trailing PageBreak if present
+    if elements and isinstance(elements[-1], PageBreak):
+        elements = elements[:-1]
+
+    # Build PDF
+    try:
+        doc.build(elements)
+    except Exception as e:
+        QMessageBox.critical(analysis, "PDF Export Error", f"Failed to save PDF: {e}")
+        return
+    finally:
+        for buf in buffers:
+            buf.close()
+
+    # Success message
+    QMessageBox.information(analysis, "PDF Exported", f"PDF report saved to:\n{file_path}")

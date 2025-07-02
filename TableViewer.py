@@ -30,11 +30,13 @@ class TableViewer(QWidget):
         # Add selectable columns list
         self.param_list = QListWidget()
         self.param_list.setSelectionMode(QListWidget.MultiSelection)
-        # Use all columns except 'Cycle' as selectable metrics
         selectable_cols = [col for col in self.analysis.cycle_times_df.columns if col != 'Cycle']
         self.param_list.addItems(selectable_cols)
         for i in range(self.param_list.count()):
-            self.param_list.item(i).setSelected(True)
+            if self.param_list.item(i).text() == ('Capacity % to KPI'):
+                self.param_list.item(i).setSelected(True)
+            else:
+                self.param_list.item(i).setSelected(False)
         param_panel = QVBoxLayout()
         param_panel.addWidget(QLabel("Sorption/Desorption Metrics"))
         param_panel.addWidget(self.param_list)
@@ -53,6 +55,14 @@ class TableViewer(QWidget):
         self.update_table()
         self.update_plot()
 
+    def load_row(self):
+        if self.analysis.loaded_row != '':
+            # Select and enable only the compounds listed in loaded_row['Selected Compounds']
+            selected_metrics = self.analysis.loaded_row.get('Selected Metrics:', [])
+            print('selected metrics', selected_metrics)
+            for i in range(self.param_list.count()):
+                self.param_list.item(i).setSelected(self.param_list.item(i).text() in selected_metrics)
+
     def update_table(self):
         df = self.analysis.cycle_times_df
         self.table.clear()
@@ -64,7 +74,7 @@ class TableViewer(QWidget):
                 value = df.iloc[i][col]
                 # Format float to 4 decimals, datetime to short string, else str
                 if isinstance(value, float):
-                    value_str = f"{value:.4e}"
+                    value_str = f"{value:.3e}"
                 elif pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, pd.Timestamp):
                     value_str = pd.to_datetime(value).strftime('%m-%d %H:%M')
                 else:
@@ -84,9 +94,6 @@ class TableViewer(QWidget):
             if pd.api.types.is_numeric_dtype(df[col]) or pd.api.types.is_timedelta64_dtype(df[col]):
                 selectable_cols.append(col)
         self.param_list.addItems(selectable_cols)
-        # Optionally select all by default
-        for i in range(self.param_list.count()):
-            self.param_list.item(i).setSelected(True)
 
     def update_plot(self):
         df = self.analysis.cycle_times_df

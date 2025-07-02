@@ -46,13 +46,14 @@ import csv
 from DataViewer import DataViewer
 from CapacityAnalysis import CapacityAnalysis
 from TableViewer import TableViewer
-from FileParsers import MassSpecParser, BackendParser, Baldy2Parser
+from FileParsers import MassSpecParser, BackendParser, Baldy2Parser, save_pdf_report
 from datetime import datetime
 from RawDataViewer import RawDataViewer
 
 class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        #Empty initializations and instantiate tab elements
         self.filename = ""
         self.mdf = pd.DataFrame()
         self.cycle_times_df = pd.DataFrame()
@@ -71,6 +72,7 @@ class MyApp(QMainWindow):
         self.qms_input_ratio = ""
         self.sorption_start = ""
         self.sorption_end = ""
+        self.loaded_row = ""
         self.viewer_instance = DataViewer(self)
         self.metrics_instance = TableViewer(self)
         self.cycle_instance = CapacityAnalysis(self)
@@ -79,6 +81,7 @@ class MyApp(QMainWindow):
 
         # OTHER VARIABLES
         self.gas_abbr = {
+            "":"",
             "Nitrogen": "N2",
             "Oxygen": "O2",
             "Argon": "Ar",
@@ -89,73 +92,16 @@ class MyApp(QMainWindow):
 
         self.build_layout()
 
-    def load_run_parameters(self):
-        """Load run parameters from a run_parameters.csv indexed by filename."""
-        csv_file = user_data_path("run_parameters.csv")
-        param_map = {
-            "Sorbent Mass [g]": (self.sorbent_mass_input, "sorbent_mass"),
-            "Reactor Diameter [in]": (self.reactor_diameter_input, "reactor_diameter"),
-            "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density"),
-            "Packing Factor": (self.packing_factor_input, "packing_factor"),
-            "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate"),
-            "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio"),
-            "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio"),
-            "Sorption Start (%)": (self.sorption_start_input, "sorption_start"),
-            "Sorption End (%)": (self.sorption_end_input, "sorption_end"),
-        }
-        try:
-            self.first_load = True  # Set before any field changes
-            #Try to open and parse the file
-            if os.path.isfile(csv_file):
-                with open(csv_file, mode="r") as file:
-                    reader = csv.DictReader(file)
-                    #Flip the order of the rows to get most recent save
-                    for row in list(reader)[::-1]:
-                        #Find correct file entry and read values into input boxes and self params
-                        if row["Filename"] == self.filename:
-                            # Define mapping of CSV keys to (input widget, attribute name)
-                            for key, (widget, attr) in param_map.items():
-                                value = row.get(key, "")
-                                widget.setText(value)
-                                setattr(self, attr, value)
-                                self._last_committed_values[widget] = value
-                            # Handle reference gas separately (QComboBox)
-                            ref_gas = row.get("Reference Gas", "")
-                            self.reference_gas_dropdown.setCurrentText(ref_gas)
-                            self.reference_gas = ref_gas
-                            self.parameter_status.setText("Status: Run Parameters Loaded")
-                            break #Once appropriate row has been found, stop iterating
-                        else: #Row not found, so default to an empty load
-                            print('setting empty')
-                            for _, (widget, attr) in param_map.items():
-                                setattr(self, attr, '')
-                                widget.setText('')
-                                self._last_committed_values[widget] = ''
-            #Defaults for empty load
-            if self.packing_factor_input.text() == '': 
-                self.packing_factor_input.setText('0.55')
-                self.packing_factor = '0.55'
-            if self.reactor_diameter_input.text() == '':
-                self.reactor_diameter_input.setText('0.8')
-                self.reactor_diameter = '0.8'
-            # Now call check_run_parameters once after all fields are set
-            self.first_load = False
-            self.check_run_parameters()
-        except Exception as e:
-            pass
-
     def check_run_parameters(self):
         """On text input change or data load, check values OK and see if changed"""
         if getattr(self, 'first_load', False):
             return
         #Reset status text, and default to no saving parameters
         self.parameter_status.setStyleSheet("")
-        self.save_parameters_button.setEnabled(False)
         
         #Change detection for gas dropdown
         if self.reference_gas_dropdown.currentText() != self.reference_gas:
             #Mark that parameters have been changed
-            self.save_parameters_button.setEnabled(True)
             self.parameter_status.setStyleSheet("")
             self.parameter_status.setText("Status: Run Parameters Changed")
             # Update label text for reactor input ratio
@@ -180,12 +126,10 @@ class MyApp(QMainWindow):
                 float(value)
                 #If different than stored value, mark as changed and update value
                 if value != getattr(self, attr_name):
-                    self.save_parameters_button.setEnabled(True)
                     self.parameter_status.setStyleSheet("")
                     self.parameter_status.setText("Status: Run Parameters Changed")
             except ValueError:
                 #Throw error if not a number, disable graphs
-                self.save_parameters_button.setEnabled(False)
                 self.parameter_status.setStyleSheet("color: red")
                 self.parameter_status.setText(f"Error: '{value}' is not a number")
                 return False #Check run parameters fails
@@ -225,12 +169,111 @@ class MyApp(QMainWindow):
         self.metrics_instance.update_table()
         self.metrics_instance.update_plot()
 
+    def ensure_run_parameters_csv(self):
+        """Ensure the run_parameters.csv exists and has the correct header."""
+        csv_file = user_data_path("run_parameters.csv")
+        expected_header = ["Filename"] + list(self.parameters.keys())
+        file_exists = os.path.isfile(csv_file)
+        header_ok = False
+        if file_exists:
+            with open(csv_file, mode="r", newline="") as file:
+                reader = csv.reader(file)
+                try:
+                    header = next(reader)
+                except StopIteration:
+                    header = []
+            if header == expected_header:
+                header_ok = True
+            else:
+                # Remove file if header is wrong
+                file.close()
+                os.remove(csv_file)
+                file_exists = False
+        if not file_exists:
+            with open(csv_file, mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(expected_header)
+
+    def load_run_parameters(self):
+        """Load run parameters from a run_parameters.csv indexed by filename."""
+        csv_file = user_data_path("run_parameters.csv")
+        param_map = {
+            "Sorbent Mass [g]": (self.sorbent_mass_input, "sorbent_mass", ''),
+            "Reactor Diameter [in]": (self.reactor_diameter_input, "reactor_diameter", '0.8'),
+            "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density", ''),
+            "Packing Factor": (self.packing_factor_input, "packing_factor", '0.55'),
+            "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate", '150'),
+            "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio", '10'),
+            "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio", ''),
+            "Sorption Start (%)": (self.sorption_start_input, "sorption_start", '0.5'),
+            "Sorption End (%)": (self.sorption_end_input, "sorption_end", '0.9'),
+        }
+        try:
+            self.parameters = {
+                "Save Timestamp": "",
+                "Sorbent Mass [g]": "",
+                "Reactor Diameter [in]": "",
+                "Sorbent Bulk Density [g/mL]": "",
+                "Input Flow Rate [SCCM]": "",
+                "Packing Factor": "",
+                "Reference Gas": "",
+                "Reactor Input Ratio (%)": "",
+                "QMS Input Ratio (%)": "",
+                "Sorption Start (%)": "",
+                "Sorption End (%)": "",
+                "Selected Compounds": [],
+                "Selected Parameters": [],
+                "Selected Others": [],
+                "Scale Run Graph": False,
+                "Start Cuts": [],
+                "End Cuts": [],
+                "Cycle Plot Elements": [],
+                "Scale Cycle Graph": False,
+                "Selected Metrics:": []
+            }
+            self.ensure_run_parameters_csv()
+            self.first_load = True  # Set before any field changes
+            found_row = False
+            if os.path.isfile(csv_file):
+                with open(csv_file, mode="r") as file:
+                    reader = csv.DictReader(file)
+                    csv_filenames = [row["Filename"] for row in list(reader)]
+                    # Debug print
+                    print(f"[DEBUG] self.filename: {self.filename}, CSV filenames: {csv_filenames}")
+                    file.seek(0)
+                    next(reader)  # skip header
+                    for row in list(reader)[::-1]:
+                        if row["Filename"] == self.filename:
+                            found_row = True
+                            for key, (widget, attr, _) in param_map.items():
+                                value = row.get(key, "")
+                                widget.setText(value)
+                                setattr(self, attr, value)
+                                self._last_committed_values[widget] = value
+                            ref_gas = row.get("Reference Gas", "")
+                            self.reference_gas_dropdown.setCurrentText(ref_gas)
+                            self.reference_gas = ref_gas
+                            self.parameter_status.setText("Status: App State Loaded")
+                            self.loaded_row = row
+                            break
+            if not found_row:
+                for _, (widget, attr, default) in param_map.items():
+                    setattr(self, attr, default)
+                    widget.setText(default)
+                    self._last_committed_values[widget] = default
+                self.reference_gas_dropdown.setCurrentText('Argon')
+                self.reference_gas = 'Argon'
+            self.first_load = False
+            self.check_run_parameters()
+        except Exception as e:
+            print(f"[ERROR] load_run_parameters: {e}")
+            pass
 
     def save_run_parameters(self):
         """Save run parameters to run_parameters.csv indexed by filename."""
         csv_file = user_data_path("run_parameters.csv")
         file_name = self.file_label.text()[6:]
-        parameters = {
+        self.parameters = {
             "Save Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "Sorbent Mass [g]": self.sorbent_mass_input.text(),
             "Reactor Diameter [in]": self.reactor_diameter_input.text(),
@@ -241,26 +284,28 @@ class MyApp(QMainWindow):
             "Reactor Input Ratio (%)": self.reactor_input_ratio_input.text(),
             "QMS Input Ratio (%)": self.qms_input_ratio_input.text(),
             "Sorption Start (%)": self.sorption_start_input.text(),
-            "Sorption End (%)": self.sorption_end_input.text()
+            "Sorption End (%)": self.sorption_end_input.text(),
+            "Selected Compounds": [item.text() for item in self.viewer_instance.compound_list.selectedItems()],
+            "Selected Parameters": [item.text() for item in self.viewer_instance.reactor_param_list.selectedItems()],
+            "Selected Others": [item.text() for item in self.viewer_instance.other_param_list.selectedItems()],
+            "Scale Run Graph": self.viewer_instance.scaling_checkbox.isChecked(),
+            "Start Cuts": [str(dt) for dt in self.cycle_times_df['Sorption Start Time']],
+            "End Cuts": [str(dt) for dt in self.cycle_times_df['Sorption End Time']],
+            "Cycle Plot Elements": [item.text() for item in self.cycle_instance.ax1_param_list.selectedItems()],
+            "Scale Cycle Graph": self.cycle_instance.scaling_checkbox.isChecked(),
+            "Selected Metrics:": [item.text() for item in self.metrics_instance.param_list.selectedItems()]
         }
         try:
-            # Check if the file exists
-            file_exists = os.path.isfile(csv_file)
-            # Make file if it's not present
-            if not file_exists: 
-                with open(csv_file, mode="w", newline="") as file:
-                    pass
-            # Open and write to the file
+            self.ensure_run_parameters_csv()
             with open(csv_file, mode="a", newline="") as file:
                 writer = csv.writer(file)
-                # Write header if the file is new
-                if not file_exists:
-                    writer.writerow(["Filename"] + list(parameters.keys()))
-                # Write the parameters
-                writer.writerow([file_name] + list(parameters.values()))
+                writer.writerow([file_name] + list(self.parameters.values()))
             # Change status and propagate data
             self.load_run_parameters()
-            self.parameter_status.setText("Status: Run Parameters Saved")
+            self.viewer_instance.load_row()
+            self.metrics_instance.load_row()
+            self.cycle_instance.load_row()
+            self.parameter_status.setText("Status: App State Saved")
         except Exception as e:
             pass
     
@@ -268,7 +313,7 @@ class MyApp(QMainWindow):
         """Load a QMS CSV file and propagate UI changes based on data"""
         if self.select_button.text() == "Load New QMS Data (Restart)": self.restart_analysis()
 
-        #Fine file
+        #Find file
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(
             self,
@@ -298,6 +343,9 @@ class MyApp(QMainWindow):
                 self.baldy3_button.setEnabled(True)
                 self.select_button.setText("Load New QMS Data (Restart)")
                 self.load_run_parameters()
+                self.viewer_instance.load_row()
+                self.metrics_instance.load_row()
+                self.cycle_instance.load_row()
                 self.save_pdf_button.setEnabled(True)  # Enable PDF button when data is loaded
             except ValueError as e:
                 self.file_label.setStyleSheet("color: red")
@@ -359,7 +407,7 @@ class MyApp(QMainWindow):
         else: self.secondary_status.setText("Status: No Secondary File Loaded")
 
 
-    def restart_analysis(self):
+    def restart_analysis(self):        
         # Remove all tabs
         self.tabs.clear()
         # Create new instances
@@ -372,7 +420,9 @@ class MyApp(QMainWindow):
         self.tabs.addTab(self.cycle_instance, "Cycle Graph")
         self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
         self.tabs.addTab(self.raw_data_instance, "Raw Data")
-        
+        # Remove all items in reference_gas_dropdown
+        self.reference_gas_dropdown.clear()
+
 
     def build_layout(self):
         self.setWindowTitle("Mitico Data Analysis")
@@ -443,7 +493,6 @@ class MyApp(QMainWindow):
         self.qms_input_ratio_input = QLineEdit()
         self.sorption_start_input = QLineEdit()
         self.sorption_end_input = QLineEdit()
-        self.save_parameters_button = QPushButton("Save Run Parameters")
 
         self.run_parameters_groupbox = QGroupBox("Run Parameters")
         run_parameters_layout = QVBoxLayout()
@@ -510,8 +559,6 @@ class MyApp(QMainWindow):
         sorption_end_layout.addWidget(self.sorption_end_input)
         run_parameters_layout.addLayout(sorption_end_layout)
 
-        run_parameters_layout.addWidget(self.save_parameters_button)
-
         self.parameter_status = QLabel("Status: Waiting for QMS data load")
         run_parameters_layout.addWidget(self.parameter_status)
 
@@ -527,6 +574,7 @@ class MyApp(QMainWindow):
         self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
         self.tabs.addTab(self.raw_data_instance, "Raw Data")
 
+        self.save_parameters_button = QPushButton("Save App State")
         self.save_pdf_button = QPushButton("Save Full PDF Report")
         self.save_pdf_button.setEnabled(False)
 
@@ -535,6 +583,7 @@ class MyApp(QMainWindow):
         analysis_layout.setSpacing(8)
         analysis_layout.setContentsMargins(4, 4, 4, 4)
         analysis_layout.addWidget(self.save_pdf_button)
+        analysis_layout.addWidget(self.save_parameters_button)
 
         analysis_groupbox.setLayout(analysis_layout)
         toolbox_layout.addWidget(analysis_groupbox)
@@ -552,7 +601,7 @@ class MyApp(QMainWindow):
         self.baldy3_button.clicked.connect(self.load_reactor_data)
         self.baldy2_button.clicked.connect(self.load_temp_data)
         self.save_parameters_button.clicked.connect(self.save_run_parameters)
-        self.save_pdf_button.clicked.connect(self.save_pdf_report)
+        self.save_pdf_button.clicked.connect(lambda: save_pdf_report(self))
 
         self.reference_gas_dropdown.currentIndexChanged.connect(self.check_run_parameters)
         #Store last committed values for each QLineEdit
@@ -577,215 +626,6 @@ class MyApp(QMainWindow):
         if current_value != last_value:
             self._last_committed_values[widget] = current_value
             self.check_run_parameters()
-
-    def save_pdf_report(self):
-        """Export a PDF report with run parameters, cycle_times_df, and all current plot images."""
-        from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak, KeepTogether
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-        import io
-
-        # Prompt user for save location
-        from PyQt5.QtWidgets import QFileDialog
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save PDF Report", f"{self.filename} Exp Report.pdf", "PDF Files (*.pdf)")
-        if not file_path:
-            return
-        if not file_path.lower().endswith('.pdf'):
-            file_path += '.pdf'
-
-        # Prepare document
-        page_width, page_height = letter
-        left_margin = right_margin = top_margin = bottom_margin = 24
-        doc = SimpleDocTemplate(
-            file_path,
-            pagesize=letter,
-            leftMargin=left_margin,
-            rightMargin=right_margin,
-            topMargin=top_margin,
-            bottomMargin=bottom_margin
-        )
-        elements = []
-        styles = getSampleStyleSheet()
-        styleN = styles['Normal']
-        styleH = styles['Heading2']
-
-        # 1. Run Parameters Table with header row
-        elements.append(Paragraph("Run Parameters", styleH))
-        param_map = [
-            ("Sorbent Mass [g]", self.sorbent_mass_input.text()),
-            ("Reactor Diameter [in]", self.reactor_diameter_input.text()),
-            ("Sorbent Bulk Density [g/mL]", self.bulk_density_input.text()),
-            ("Packing Factor", self.packing_factor_input.text()),
-            ("Input Flow Rate [SCCM]", self.input_flow_rate_input.text()),
-            ("Reference Gas", self.reference_gas_dropdown.currentText()),
-            ("Reactor Input Ratio (%)", self.reactor_input_ratio_input.text()),
-            ("QMS Input Ratio (%)", self.qms_input_ratio_input.text()),
-            ("Sorption Start (%)", self.sorption_start_input.text()),
-            ("Sorption End (%)", self.sorption_end_input.text()),
-        ]
-        param_table_data = [["Parameter", "Value"]] + [[k, v] for k, v in param_map]
-        param_table = Table(param_table_data, hAlign='LEFT', colWidths=[160, 80])
-        param_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ]))
-        elements.append(param_table)
-        elements.append(Spacer(1, 12))
-
-        # 2. cycle_times_df Table (vertical, 5 cycles per table, 3 sig figs, sci notation, short datetimes, wide metric col)
-        if self.cycle_times_df is not None and not self.cycle_times_df.empty:
-            elements.append(Paragraph("Cycle Times Table", styleH))
-            df = self.cycle_times_df.reset_index(drop=True)
-            import pandas as pd
-            def fmt(x, col=None):
-                if isinstance(x, float):
-                    return f"{x:.2e}" if x != 0 else "0"
-                if col == 'Sorption Duration':
-                    # Format timedelta as HH:MM:SS
-                    try:
-                        if pd.isnull(x):
-                            return ""
-                        if isinstance(x, pd.Timedelta):
-                            total_seconds = int(x.total_seconds())
-                        else:
-                            total_seconds = int(pd.to_timedelta(x).total_seconds())
-                        hours = total_seconds // 3600
-                        minutes = (total_seconds % 3600) // 60
-                        seconds = total_seconds % 60
-                        return f"{hours:02}:{minutes:02}:{seconds:02}"
-                    except Exception:
-                        return str(x)
-                if isinstance(x, pd.Timestamp) or (hasattr(x, 'isoformat') and 'T' in str(x)):
-                    try:
-                        return pd.to_datetime(x).strftime('%H:%M:%S')
-                    except Exception:
-                        return str(x)
-                if isinstance(x, str) and (':' in x and '-' in x):
-                    try:
-                        return pd.to_datetime(x).strftime('%H:%M:%S')
-                    except Exception:
-                        return x
-                return str(x)
-            n_cycles = df.shape[0]
-            col_names = [str(c) for c in df.columns]
-            for start in range(0, n_cycles, 5):
-                end = min(start+5, n_cycles)
-                cycles = df.iloc[start:end]
-                header = ["Metric"] + [f"Cycle {int(c)}" for c in cycles['Cycle']]
-                data = [header]
-                for col in col_names:
-                    if col == 'Cycle':
-                        continue
-                    row = [col]
-                    for i in range(start, end):
-                        val = df.at[i, col]
-                        row.append(fmt(val, col=col))
-                    data.append(row)
-                for row in data:
-                    while len(row) < 6:
-                        row.append("")
-                table = Table(data, hAlign='LEFT', colWidths=[200]+[60]*5, repeatRows=1)
-                table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ]))
-                elements.append(table)
-                elements.append(Spacer(1, 8))
-
-        # 3. All current plot images (including all cycles in cycle viewer)
-        buffers = []  # Keep references to all image buffers until PDF is built
-        full_plot_width = page_width - left_margin - right_margin
-        full_plot_height = full_plot_width * 0.45  # Slightly shorter to fit two per page
-        if hasattr(self, 'cycle_instance') and self.cycle_instance is not None:
-            try:
-                figures = self.cycle_instance.get_all_figures_for_pdf()
-            except Exception:
-                figures = []
-            if figures:
-                elements.append(Paragraph("Cycle Analysis Plots", styleH))
-                plot_pairs = [figures[i:i+2] for i in range(0, len(figures), 2)]
-                for pair in plot_pairs:
-                    imgs = []
-                    for fig in pair:
-                        for ax in fig.get_axes():
-                            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
-                                item.set_fontsize(8)
-                        buf = io.BytesIO()
-                        fig.set_size_inches(full_plot_width / 96, full_plot_height / 96)
-                        fig.savefig(buf, format='png', bbox_inches='tight', dpi=96)
-                        buf.seek(0)
-                        img = Image(buf, width=full_plot_width, height=full_plot_height)
-                        imgs.append(img)
-                        buffers.append(buf)
-                    elements.append(KeepTogether(imgs))
-                    elements.append(Spacer(1, 12))
-                    elements.append(PageBreak())
-
-        # Add DataViewer plot if available (make it full page)
-        if hasattr(self, 'viewer_instance') and self.viewer_instance is not None:
-            try:
-                fig = self.viewer_instance.figure
-                for ax in fig.get_axes():
-                    for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
-                        item.set_fontsize(8)
-                buf = io.BytesIO()
-                fig.set_size_inches(full_plot_width / 96, (full_plot_width * 0.6) / 96)
-                fig.savefig(buf, format='png', bbox_inches='tight', dpi=96)
-                buf.seek(0)
-                img = Image(buf, width=full_plot_width, height=full_plot_width * 0.6)
-                elements.append(Paragraph("Full Run Data Plot", styleH))
-                elements.append(img)
-                elements.append(Spacer(1, 12))
-                buffers.append(buf)
-                elements.append(PageBreak())
-            except Exception:
-                pass
-
-        # Add MetricsViewer plot if available (make it full page)
-        if hasattr(self, 'metrics_instance') and self.metrics_instance is not None:
-            try:
-                fig = self.metrics_instance.figure
-                for ax in fig.get_axes():
-                    for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts() if ax.get_legend() else []):
-                        item.set_fontsize(8)
-                buf = io.BytesIO()
-                fig.set_size_inches(full_plot_width / 96, (full_plot_width * 0.6) / 96)
-                fig.savefig(buf, format='png', bbox_inches='tight', dpi=96)
-                buf.seek(0)
-                img = Image(buf, width=full_plot_width, height=full_plot_width * 0.6)
-                elements.append(Paragraph("Metrics Table Plot", styleH))
-                elements.append(img)
-                elements.append(Spacer(1, 12))
-                buffers.append(buf)
-                # Only add a PageBreak if this is not the last element
-                # Remove the unconditional PageBreak here
-            except Exception:
-                pass
-
-        # Remove trailing PageBreak if present
-        if elements and isinstance(elements[-1], PageBreak):
-            elements = elements[:-1]
-
-        # Build PDF
-        try:
-            doc.build(elements)
-        except Exception as e:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "PDF Export Error", f"Failed to save PDF: {e}")
-            return
-        finally:
-            for buf in buffers:
-                buf.close()
-
-        # Success message
-        from PyQt5.QtWidgets import QMessageBox
-        QMessageBox.information(self, "PDF Exported", f"PDF report saved to:\n{file_path}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

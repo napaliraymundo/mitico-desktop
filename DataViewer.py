@@ -1,10 +1,11 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QLabel, QListWidget, QVBoxLayout,
-    QHBoxLayout, QSizePolicy, QApplication, QCheckBox
+    QHBoxLayout, QSizePolicy, QApplication, QCheckBox, QPushButton
 )
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+import ast
 from numpy import number, floor, log10
 
 class DataViewer(QMainWindow):
@@ -55,9 +56,11 @@ class DataViewer(QMainWindow):
         control_panel.addWidget(QLabel("Other Parameters"))
         control_panel.addWidget(self.other_param_list)
 
-        # === Add Use Scaling Checkbox ===
-        self.scaling_checkbox = QCheckBox("Use Scaling Factors")
+        self.scaling_checkbox = QPushButton("Apply Scaling Factors")
+        self.scaling_checkbox.setCheckable(True)
+        self.scaling_checkbox.setChecked(True)
         control_panel.addWidget(self.scaling_checkbox)
+        self.scaling_checkbox.toggled.connect(self.update_plot)
 
         control_panel.addStretch()
         main_layout.addLayout(control_panel, stretch=1)
@@ -66,7 +69,6 @@ class DataViewer(QMainWindow):
         self.compound_list.itemSelectionChanged.connect(self.update_plot)
         self.reactor_param_list.itemSelectionChanged.connect(self.update_plot)
         self.other_param_list.itemSelectionChanged.connect(self.update_plot)
-        self.scaling_checkbox.stateChanged.connect(self.update_plot)
 
     def calculate_scaling_factors(self):
         # Only describe numeric columns
@@ -79,6 +81,21 @@ class DataViewer(QMainWindow):
 
     def get_selected_items(self, widget):
         return [item.text() for item in widget.selectedItems() if item.text() != "None"]
+    
+    def load_row(self):
+        if self.analysis.loaded_row != '':
+            # Select and enable only the compounds listed in loaded_row['Selected Compounds']
+            selected_compounds = ast.literal_eval(self.analysis.loaded_row.get('Selected Compounds', []))
+            for i in range(self.compound_list.count()):
+                self.compound_list.item(i).setSelected(self.compound_list.item(i).text() in selected_compounds)
+            selected_parameters = ast.literal_eval(self.analysis.loaded_row.get('Selected Parameters', []))
+            for i in range(self.reactor_param_list.count()):
+                self.reactor_param_list.item(i).setSelected(self.reactor_param_list.item(i).text() in selected_parameters)
+            selected_others = ast.literal_eval(self.analysis.loaded_row.get('Selected Others', []))
+            for i in range(self.other_param_list.count()):
+                self.other_param_list.item(i).setSelected(self.other_param_list.item(i).text() in selected_others)
+            scale_run_graph = bool(ast.literal_eval(self.analysis.loaded_row.get('Scale Run Graph', 'False')))
+            self.scaling_checkbox.setChecked(scale_run_graph)
 
     def update_data(self):
          # Only add compounds that are not all NaN
