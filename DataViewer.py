@@ -98,6 +98,11 @@ class DataViewer(QMainWindow):
             self.scaling_checkbox.setChecked(scale_run_graph)
 
     def update_data(self):
+        # Block signals to avoid recursion when reloading lists
+        self.compound_list.blockSignals(True)
+        self.reactor_param_list.blockSignals(True)
+        self.other_param_list.blockSignals(True)
+
          # Only add compounds that are not all NaN
         for item in self.analysis.compound_list:
             if self.analysis.mdf[item].notna().any():
@@ -105,17 +110,11 @@ class DataViewer(QMainWindow):
         self.reactor_param_list.addItems(self.analysis.reactor_parameters)
         self.other_param_list.addItems(self.analysis.other_parameters)
 
-        # Block signals to avoid recursion when reloading lists
-        self.compound_list.blockSignals(True)
-        self.reactor_param_list.blockSignals(True)
-        self.other_param_list.blockSignals(True)
-
         # Reload compound list
         self.compound_list.clear()
         for item in self.analysis.compound_list:
             if self.analysis.mdf[item].notna().any():
                 self.compound_list.addItem(item)
-        self.compound_list.selectAll()
 
         # Reload reactor param list
         self.reactor_param_list.clear()

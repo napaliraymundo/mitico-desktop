@@ -77,7 +77,7 @@ class CapacityAnalysis(QMainWindow):
         sorption_start_layout.addWidget(self.sorption_start_override)
         sorption_start_layout.addStretch()
         cycle_groupbox_layout.addLayout(sorption_start_layout)
-        self.sorption_start_override.editingFinished.connect(self.analysis.update_all_calculations)
+        self.sorption_start_override.editingFinished.connect(self.analysis.update_cycles)
 
         # Sorption End Override row (label + input)
         sorption_end_layout = QHBoxLayout()
@@ -88,7 +88,7 @@ class CapacityAnalysis(QMainWindow):
         sorption_end_layout.addWidget(self.sorption_end_override)
         sorption_end_layout.addStretch()
         cycle_groupbox_layout.addLayout(sorption_end_layout)
-        self.sorption_end_override.editingFinished.connect(self.analysis.update_all_calculations)
+        self.sorption_end_override.editingFinished.connect(self.analysis.update_cycles)
 
         cycle_groupbox.setLayout(cycle_groupbox_layout)
         control_panel.addWidget(cycle_groupbox)
@@ -96,6 +96,7 @@ class CapacityAnalysis(QMainWindow):
         # Add selector for ax1 plot elements
         self.ax1_param_list = QListWidget()
         self.ax1_param_list.setSelectionMode(QListWidget.MultiSelection)
+
         # List of available ax1 elements
         self.ax1_elements = [
             ('yCO2 [%]', 'yCO2 [%]'),
@@ -105,6 +106,7 @@ class CapacityAnalysis(QMainWindow):
         ]
         for label, col in self.ax1_elements:
             self.ax1_param_list.addItem(label)
+
         # Default to only yCO2 on
         for i in range(self.ax1_param_list.count()):
             if self.ax1_param_list.item(i).text() == ('yCO2 [%]' or 'Residence Time [s]'):
@@ -125,6 +127,10 @@ class CapacityAnalysis(QMainWindow):
 
         main_layout.addLayout(control_panel, stretch=0)
         
+    #Loads cut data from row
+    def load_cuts(self):
+        analysis = self.analysis
+
     #Button functions to trim start of calculation
     def cut_start(self):
         cycle_df= self.analysis.cycle_times_df
@@ -340,7 +346,6 @@ class CapacityAnalysis(QMainWindow):
         #Refresh dataframes
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
-       
         #Preliminary calculations
         co2_molar_mass = 44.01
         sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
@@ -373,7 +378,6 @@ class CapacityAnalysis(QMainWindow):
             total_absorbed.append(sum(f_absorbed['CO2 Absorbed [mol]']))
             min_gammas.append(f['yCO2 [%]'][f['yCO2 [%]'] > 0].min()/100)
             duration_seconds.append((end_cut - start_cut).total_seconds())
-
         #Push return lists to the cycle times dataframe
         sorption_durations = [
             f"{int(ds // 3600)}:{int((ds % 3600) // 60):02d}:{int(ds % 60):02d}" if pd.notna(ds) else nan
@@ -502,12 +506,14 @@ class CapacityAnalysis(QMainWindow):
             self.metric_selector.item(i).setSelected(True)
 
     def load_row(self):
-        if self.analysis.loaded_row != '':
-            cycle_plot_elements = ast.literal_eval(self.analysis.loaded_row.get('Cycle Plot Elements', []))
+        row = self.analysis.loaded_row
+        if row != '':
+            cycle_plot_elements = ast.literal_eval(row.get('Cycle Plot Elements', []))
             for i in range(self.ax1_param_list.count()):
                 self.ax1_param_list.item(i).setSelected(self.ax1_param_list.item(i).text() in cycle_plot_elements)
-            scale_cycle_graph = bool(ast.literal_eval(self.analysis.loaded_row.get('Scale Cycle Graph', 'False')))
+            scale_cycle_graph = bool(ast.literal_eval(row.get('Scale Cycle Graph', 'False')))
             self.scaling_checkbox.setChecked(scale_cycle_graph)
+
     
     def get_all_figures_for_pdf(self):
         """Return a list of matplotlib Figure objects for all cycles (both ax1 and ax2 plots)."""

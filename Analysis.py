@@ -1,5 +1,6 @@
 import sys
 import os
+import ast
 os.environ['MPLCONFIGDIR'] = os.path.expanduser('~/.myapp_matplotlib_cache')
 
 def resource_path(relative_path):
@@ -38,7 +39,7 @@ if not os.path.isfile(USER_CSV):
         open(USER_CSV, 'a').close()
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QPushButton, QLabel,
+    QApplication, QMainWindow, QWidget, QPushButton, QLabel, QListWidget,
     QVBoxLayout, QHBoxLayout, QFileDialog, QTabWidget, QGroupBox, QLineEdit, QComboBox
 )
 import pandas as pd
@@ -165,7 +166,6 @@ class MyApp(QMainWindow):
         self.cycle_instance.calculate_kinetics_wet()
         self.cycle_instance.calculate_kinetics_dry()
         self.cycle_instance.update_plots()
-        self.metrics_instance.reload_dropdown()
         self.metrics_instance.update_table()
         self.metrics_instance.update_plot()
 
@@ -244,6 +244,7 @@ class MyApp(QMainWindow):
                     next(reader)  # skip header
                     for row in list(reader)[::-1]:
                         if row["Filename"] == self.filename:
+                            print('Found', row)
                             found_row = True
                             for key, (widget, attr, _) in param_map.items():
                                 value = row.get(key, "")
@@ -255,6 +256,9 @@ class MyApp(QMainWindow):
                             self.reference_gas = ref_gas
                             self.parameter_status.setText("Status: App State Loaded")
                             self.loaded_row = row
+                            if len(list(ast.literal_eval(row.get('Start Cuts')))) == len(self.cycle_times_df):
+                                self.cycle_times_df['Sorption Start Time'] = pd.to_datetime(list(ast.literal_eval(row.get('Start Cuts'))))
+                                self.cycle_times_df['Sorption End Time'] = pd.to_datetime(list(ast.literal_eval(row.get('End Cuts'))))
                             break
             if not found_row:
                 for _, (widget, attr, default) in param_map.items():
@@ -266,7 +270,6 @@ class MyApp(QMainWindow):
             self.first_load = False
             self.check_run_parameters()
         except Exception as e:
-            print(f"[ERROR] load_run_parameters: {e}")
             pass
 
     def save_run_parameters(self):
@@ -374,7 +377,10 @@ class MyApp(QMainWindow):
                 self.secondary_status.setText('Status: Reactor data merge OK')
                 self.baldy3_button.setEnabled(False)
                 self.baldy2_button.setEnabled(False)
-                self.check_run_parameters()
+                self.load_run_parameters()
+                self.viewer_instance.load_row()
+                self.metrics_instance.load_row()
+                self.cycle_instance.load_row()
             except ValueError as e:
                 self.secondary_status.setStyleSheet("color: red")
                 self.secondary_status.setText(f'Status: Folder invalid – Try another Folder')
@@ -400,7 +406,10 @@ class MyApp(QMainWindow):
                 self.secondary_status.setText('Status: Temp data merge OK')
                 self.baldy2_button.setEnabled(False)
                 self.baldy3_button.setEnabled(False)
-                self.check_run_parameters()
+                self.load_run_parameters()
+                self.viewer_instance.load_row()
+                self.metrics_instance.load_row()
+                self.cycle_instance.load_row()
             except ValueError as e:
                 self.secondary_status.setStyleSheet("color: red")
                 self.secondary_status.setText(f'Status: File invalid – Try another CSV')
@@ -408,13 +417,18 @@ class MyApp(QMainWindow):
 
 
     def restart_analysis(self):        
-        # Remove all tabs
-        self.tabs.clear()
         # Create new instances
+        self.metrics_instance.param_list = None
+        self.viewer_instance.other_param_list = None
+        self.viewer_instance.reactor_param_list = None
+        self.viewer_instance.compound_list = None
         self.viewer_instance = DataViewer(self)
         self.cycle_instance = CapacityAnalysis(self)
         self.metrics_instance = TableViewer(self)
         self.raw_data_instance = RawDataViewer(self)
+        # Remove all tabs
+        self.tabs.clear()
+
         # Add new tabs
         self.tabs.addTab(self.viewer_instance, "Run Graph")
         self.tabs.addTab(self.cycle_instance, "Cycle Graph")

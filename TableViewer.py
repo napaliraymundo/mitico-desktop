@@ -59,7 +59,6 @@ class TableViewer(QWidget):
         if self.analysis.loaded_row != '':
             # Select and enable only the compounds listed in loaded_row['Selected Compounds']
             selected_metrics = self.analysis.loaded_row.get('Selected Metrics:', [])
-            print('selected metrics', selected_metrics)
             for i in range(self.param_list.count()):
                 self.param_list.item(i).setSelected(self.param_list.item(i).text() in selected_metrics)
 
