@@ -206,7 +206,7 @@ class MyApp(QMainWindow):
             "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio", '10'),
             "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio", ''),
             "Sorption Start (%)": (self.sorption_start_input, "sorption_start", '0.5'),
-            "Sorption End (%)": (self.sorption_end_input, "sorption_end", '0.9'),
+            "Sorption End (%)": (self.sorption_end_input, "sorption_end", '9'),
         }
         try:
             self.parameters = {
