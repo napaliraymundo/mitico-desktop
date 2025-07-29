@@ -17,7 +17,7 @@ class RawDataViewer(QMainWindow):
 
         self.table = QTableWidget()
         layout.addWidget(self.table)
-        # Optionally, add a note if not all rows are shown
+
     def update_table(self):
         # Only show the first 1000 rows to prevent UI issues with large files
         df = self.analysis.mdf.reset_index().iloc[:1000]
@@ -28,7 +28,9 @@ class RawDataViewer(QMainWindow):
         for i in range(df.shape[0]):
             for j, col in enumerate(df.columns):
                 value = df.iloc[i][col]
-                if isinstance(value, float):
+                if "%" in str(col) and isinstance(value, (float, int)):
+                    value_str = f"{value:.3f}"
+                elif isinstance(value, float):
                     value_str = f"{value:.3e}"
                 elif pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, pd.Timestamp):
                     value_str = pd.to_datetime(value).strftime('%m-%d %H:%M:%S')

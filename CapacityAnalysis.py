@@ -1,9 +1,12 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QApplication, QPushButton, QGroupBox, QLineEdit, QListWidget
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, \
+    QApplication, QPushButton, QGroupBox, QLineEdit, QListWidget
 from PyQt5.QtCore import Qt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, \
+    NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import pandas as pd
-from numpy import nan, sum, maximum, isfinite, pi, e, log, subtract, number, floor, log10
+from numpy import nan, sum, maximum, isfinite, pi, e, log, subtract, number, floor, \
+    log10
 from scipy.stats import linregress
 import ast
 
@@ -17,7 +20,8 @@ class CapacityAnalysis(QMainWindow):
 
         self.setWindowTitle("Graph Cycle")
         screen_geometry = QApplication.desktop().screenGeometry()
-        self.setGeometry(300, 0, screen_geometry.width() - 300, screen_geometry.height())
+        self.setGeometry(300, 0, \
+                         screen_geometry.width() - 300, screen_geometry.height())
         self.setWindowFlags(self.windowFlags() | Qt.Window)
 
         central_widget = QWidget()
@@ -48,7 +52,7 @@ class CapacityAnalysis(QMainWindow):
         control_panel.setAlignment(Qt.AlignTop)
 
         # Cycle Number GroupBox with selector and overrides
-        cycle_groupbox = QGroupBox("Cycle Number")
+        cycle_groupbox = QGroupBox("Manual Cuts")
         cycle_groupbox.setMinimumWidth(260)  # Make groupbox visually wider
         cycle_groupbox_layout = QVBoxLayout()
         cycle_groupbox_layout.setSpacing(8)
@@ -74,10 +78,10 @@ class CapacityAnalysis(QMainWindow):
         self.sorption_start_override = QLineEdit()
         self.sorption_start_override.setFixedWidth(80)
         sorption_start_layout.addWidget(sorption_start_label)
-        sorption_start_layout.addWidget(self.sorption_start_override)
         sorption_start_layout.addStretch()
+        sorption_start_layout.addWidget(self.sorption_start_override)
         cycle_groupbox_layout.addLayout(sorption_start_layout)
-        self.sorption_start_override.editingFinished.connect(self.analysis.update_cycles)
+        self.sorption_start_override.editingFinished.connect(self.cut_start)
 
         # Sorption End Override row (label + input)
         sorption_end_layout = QHBoxLayout()
@@ -85,10 +89,34 @@ class CapacityAnalysis(QMainWindow):
         self.sorption_end_override = QLineEdit()
         self.sorption_end_override.setFixedWidth(80)
         sorption_end_layout.addWidget(sorption_end_label)
-        sorption_end_layout.addWidget(self.sorption_end_override)
         sorption_end_layout.addStretch()
+        sorption_end_layout.addWidget(self.sorption_end_override)
         cycle_groupbox_layout.addLayout(sorption_end_layout)
-        self.sorption_end_override.editingFinished.connect(self.analysis.update_cycles)
+        self.sorption_end_override.editingFinished.connect(self.cut_end)
+
+        # Regression Start Override row
+        regression_start_layout = QHBoxLayout()
+        regression_start_label = QLabel("Regression Start Cut:")
+        self.regression_start_override = QLineEdit()
+        self.regression_start_override.setFixedWidth(80)
+        regression_start_layout.addWidget(regression_start_label)
+        regression_start_layout.addStretch()
+        regression_start_layout.addWidget(self.regression_start_override)
+        cycle_groupbox_layout.addLayout(regression_start_layout)
+        self.regression_start_override.editingFinished.connect(\
+            self.cut_regression_start)
+
+        # Regression End Override row
+        regression_end_layout = QHBoxLayout()
+        regression_end_label = QLabel("Regression End Cut:")
+        self.regression_end_override = QLineEdit()
+        self.regression_end_override.setFixedWidth(80)
+        regression_end_layout.addWidget(regression_end_label)
+        regression_end_layout.addStretch()
+        regression_end_layout.addWidget(self.regression_end_override)
+        cycle_groupbox_layout.addLayout(regression_end_layout)
+        self.regression_end_override.editingFinished.connect(\
+            self.cut_regression_end)
 
         cycle_groupbox.setLayout(cycle_groupbox_layout)
         control_panel.addWidget(cycle_groupbox)
@@ -107,12 +135,6 @@ class CapacityAnalysis(QMainWindow):
         for label, col in self.ax1_elements:
             self.ax1_param_list.addItem(label)
 
-        # Default to only yCO2 on
-        for i in range(self.ax1_param_list.count()):
-            if self.ax1_param_list.item(i).text() == ('yCO2 [%]' or 'Residence Time [s]'):
-                self.ax1_param_list.item(i).setSelected(True)
-            else:
-                self.ax1_param_list.item(i).setSelected(False)
         # Add to right control panel
         control_panel.addWidget(QLabel("Cycle Plot Elements"))
         control_panel.addWidget(self.ax1_param_list)
@@ -126,64 +148,110 @@ class CapacityAnalysis(QMainWindow):
         self.scaling_checkbox.toggled.connect(self.update_plots)
 
         main_layout.addLayout(control_panel, stretch=0)
-        
-    #Loads cut data from row
-    def load_cuts(self):
-        analysis = self.analysis
 
-    #Button functions to trim start of calculation
+
     def cut_start(self):
+        """Button functions to trim start of calculation"""
         cycle_df= self.analysis.cycle_times_df
         try:
             if 'Sorption Start Time' in cycle_df.columns:
                 float_val = float(self.sorption_start_override.text())
+                self.pull_state()
                 start = cycle_df['Start'][self.current_cycle_index]
                 end = cycle_df['End'][self.current_cycle_index]
                 cut_time = start + pd.to_timedelta(float_val, unit='m')
-                self.analysis.cycle_times_df['Sorption Start Time'][self.current_cycle_index] = \
-                    cut_time if (start < cut_time < end) else start
+                self.analysis.cycle_times_df['Sorption Start Time']\
+                    [self.current_cycle_index] = \
+                    float_val if (start <= cut_time <= end) else start
             else:
-                self.analysis.cycle_times_df['Sorption Start Time'] = cycle_df['Start']
-        except ValueError:
+                self.analysis.cycle_times_df['Sorption Start Time'] = 0.0
+        except ValueError: #Don't update the dataframe if a nonfloat is entered
             pass
 
-    #Button function to trim end of calculation
     def cut_end(self):
+        """Button function to trim end of calculation"""
         cycle_df= self.analysis.cycle_times_df
         try:
             if 'Sorption End Time' in cycle_df.columns:
                 float_val = float(self.sorption_end_override.text())
+                self.pull_state()
                 start = cycle_df['Start'][self.current_cycle_index]
                 end = cycle_df['End'][self.current_cycle_index]
                 cut_time = start + pd.to_timedelta(float_val, unit='m')
-                self.analysis.cycle_times_df['Sorption End Time'][self.current_cycle_index] = \
-                    cut_time if (start < cut_time < end) else end
-            else: self.analysis.cycle_times_df['Sorption End Time'] = cycle_df['End']
-        except ValueError:
+                self.analysis.cycle_times_df['Sorption End Time']\
+                    [self.current_cycle_index] = \
+                    float_val if (start < cut_time < end) else end
+            else:
+                self.analysis.cycle_times_df['Sorption End Time'] = \
+                (cycle_df['End'] - cycle_df['Start']).dt.total_seconds() / 60
+        except ValueError: #Don't update the dataframe if a nonfloat is entered
             pass
+
+    def cut_regression_start(self):
+        return
+    
+    def cut_regression_end(self):
+        return
+
+    def pull_state(self):
+        self.cycle_times_df = self.analysis.cycle_times_df
+        number_of_cycles = len(self.cycle_times_df)
+        start_cuts = self.analysis.state_other['Start Cuts']
+        end_cuts = self.analysis.state_other['End Cuts']
+        regression_start_cuts = self.analysis.state_other['Regression Start Cuts']
+        regression_end_cuts = self.analysis.state_other['Regression End Cuts']
+
+
+        selected_labels = [item.text() for item in self.ax1_param_list.selectedItems()]
+        self.analysis.state_qlist['Selected Compounds'] = selected_labels
+        if len(self.analysis.state_other['Start Cuts']) != len(self.cycle_times_df):
+            empty_array = [None] * len(self.cycle_times_df)
+            self.analysis.state_other['Start Cuts'] = empty_array
+            self.analysis.state_other['End Cuts'] = empty_array
+            self.analysis.state_other['Regression Start Cuts'] = empty_array
+            self.analysis.state_other['Regression End Cuts'] = empty_array
+        self.analysis.state_other['Start Cuts'][self.current_cycle_index] = \
+            self.sorption_start_override.text()
+        self.analysis.state_other['End Cuts'][self.current_cycle_index] = \
+            self.sorption_end_override.text()
+        self.analysis.state_other['Regression Start Cuts'][self.current_cycle_index] = \
+            self.regression_start_override.text()
+        self.analysis.state_other['Regression End Cuts'][self.current_cycle_index] = \
+            self.regression_end_override.text()
+        print('state updated')
+        print(self.analysis.state_other)
 
     #Button function to view previous cycle
     def select_prev_cycle(self):
         if self.current_cycle_index > 0:
             self.current_cycle_index -= 1
-            self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
+            self.cycle_label.setText(\
+                f'{self.cycle_numbers[self.current_cycle_index]}\
+                    /{max(self.cycle_numbers)}')
             self.sorption_start_override.clear()
             self.sorption_end_override.clear()
+            self.regression_start_override.clear()
+            self.regression_end_override.clear()
             self.update_plots()
 
     #Button function to view next cycle
     def select_next_cycle(self):
         if self.current_cycle_index < len(self.cycle_numbers) - 1:
             self.current_cycle_index += 1
-            self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
+            self.cycle_label.setText(\
+                f'{self.cycle_numbers[self.current_cycle_index]}\
+                    /{max(self.cycle_numbers)}')
             self.sorption_start_override.clear()
             self.sorption_end_override.clear()
+            self.regression_start_override.clear()
+            self.regression_end_override.clear()
             self.update_plots()
             
     #Calculate scaling factors for selected columns based on sorption range
     def calculate_scaling_factors(self, f, selected_cols, sorption_start, sorption_end):
         # Only describe numeric columns in the sorption range
-        describe_df = f.loc[(f.index >= sorption_start) & (f.index <= sorption_end), selected_cols].select_dtypes(include=[number]).describe()
+        describe_df = f.loc[(f.index >= sorption_start) & (f.index <= sorption_end)\
+                            , selected_cols].select_dtypes(include=[number]).describe()
         scaling = (describe_df.loc['max']).apply(
             lambda x: 10**(floor(log10(abs(x)))) if x != 0 else 1
         ).fillna(1)
@@ -195,10 +263,14 @@ class CapacityAnalysis(QMainWindow):
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
         self.figure1.clear()
+
         ax1 = self.figure1.add_subplot(111)
         n = self.cycle_numbers[self.current_cycle_index]
-        start_cut = self.cycle_times_df['Sorption Start Time'][n-1]
-        end_cut = self.cycle_times_df['Sorption End Time'][n-1]
+        start_time = self.cycle_times_df['Start'][self.current_cycle_index]
+        start_cut = start_time + pd.to_timedelta(\
+            self.cycle_times_df['Sorption Start Time'][n-1],unit='m')
+        end_cut = start_time + pd.to_timedelta(\
+            self.cycle_times_df['Sorption End Time'][n-1],unit='m')
         if 'No Completed Cycles' in self.df.columns:
             f = self.df[self.df['No Completed Cycles'] == n]
         else:
@@ -209,7 +281,9 @@ class CapacityAnalysis(QMainWindow):
 
         # Get selected ax1 elements
         selected_labels = [item.text() for item in self.ax1_param_list.selectedItems()]
-        selected_cols = [col for label, col in self.ax1_elements if label in selected_labels and col in f_center.columns]
+        selected_cols = [col for label, col in self.ax1_elements\
+                          if label in selected_labels and col in f_center.columns]
+
 
         use_scaling = self.scaling_checkbox.isChecked()
         scaling_factors = None
@@ -217,7 +291,8 @@ class CapacityAnalysis(QMainWindow):
             ax1.set_ylim(-2,12)
             scaling_factors = {}
             for col in selected_cols:
-                scaling_factors[col] = self.calculate_scaling_factors(f, [col], start_cut, end_cut).get(col, 1)
+                scaling_factors[col] = self.calculate_scaling_factors(\
+                    f, [col], start_cut, end_cut).get(col, 1)
         for label, col in self.ax1_elements:
             if label in selected_labels and col in f_center.columns:
                 ydata = f_center[col]
@@ -226,14 +301,18 @@ class CapacityAnalysis(QMainWindow):
                     plot_label = f"{label} / {scaling_factors[col]:.2f}"
                 else:
                     plot_label = label
-                ax1.plot((f_center.index - f.index[0]).total_seconds()/60, ydata, label=plot_label)
+                ax1.plot((f_center.index - f.index[0]).total_seconds()/60, ydata,\
+                          label=plot_label)
                 # Optionally plot cut regions for yCO2 only
                 if col == 'yCO2 [%]':
-                    ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60, f_cut_left[col], color='grey', linestyle=':')
-                    ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60, f_cut_right[col], color='grey', linestyle=':')
+                    ax1.plot((f_cut_left.index - f.index[0]).total_seconds()/60,\
+                              f_cut_left[col], color='grey', linestyle=':')
+                    ax1.plot((f_cut_right.index - f.index[0]).total_seconds()/60,\
+                              f_cut_right[col], color='grey', linestyle=':')
         
-        regression_start_rel = (self.cycle_times_df['Regression Start Time'][n-1]-f.index[0]).total_seconds()/60
-        regression_end_rel = (self.cycle_times_df['Regression End Time'][n-1]-f.index[0]).total_seconds()/60
+        # cut_time = start + pd.to_timedelta(float_val, unit='m')
+        regression_start_rel = self.cycle_times_df['Regression Start Time'][n-1]
+        regression_end_rel = self.cycle_times_df['Regression End Time'][n-1]
         sorption_start_rel = (f_center.index[0] - f.index[0]).total_seconds()/60
         sorption_end_rel = (f_center.index[-1] - f.index[0]).total_seconds()/60
         # Get colors from plotted lines for yCO2 and Residence Time [s]
@@ -250,10 +329,10 @@ class CapacityAnalysis(QMainWindow):
             residence_time_color = 'red'
 
         ax1.axvline(x=regression_start_rel, linestyle='--',
-                label=f'Regression Start = {self.analysis.sorption_start_input.text()}%',
+                label=f"Regression Start = {self.analysis.state_text['Regression Start (%)']}%",
                 color=residence_time_color)
         ax1.axvline(x=regression_end_rel, linestyle='--',
-                label=f'Regression End = {self.analysis.sorption_end_input.text()}%',
+                label=f"Regression End = {self.analysis.state_text['Regression End (%)']}%",
                 color=residence_time_color)
         ax1.axvline(x=sorption_start_rel, linestyle='--',
                 label=f'Sorption Start = {int(sorption_start_rel)}min',
@@ -272,19 +351,28 @@ class CapacityAnalysis(QMainWindow):
         self.figure2.clear()
         ax2 = self.figure2.add_subplot(111)
         # Retrim
-        start_cut = self.cycle_times_df['Regression Start Time'][n-1]
-        end_cut = self.cycle_times_df['Regression End Time'][n-1]
+        # cut_time = start + pd.to_timedelta(float_val, unit='m')
+        start_time = self.cycle_times_df['Start'][self.current_cycle_index]
+        start_cut = start_time + pd.to_timedelta(\
+            self.cycle_times_df['Regression Start Time'][n-1],unit='m')
+        end_cut = start_time + pd.to_timedelta(\
+            self.cycle_times_df['Regression End Time'][n-1],unit='m')
         f_center = f[(f.index > start_cut) & (f.index < end_cut)]
         if 'Accumulated CO2 Absorbed [mol]' in f.columns:
-            ax2.plot(f_center['Residence Time [s]'], f_center['ln[CO2]'], label=f'Cycle #{n}')
+            ax2.plot(f_center['Residence Time [s]'], f_center['ln[CO2]'],\
+                      label=f'Cycle #{n}')
             # Plot the fitted line from cycle_times_df
             k = self.cycle_times_df['Rate Constant K (Wet)'][n-1]
             # lnco2_t0 = self.cycle_times_df['lnCO2_t0'][n-1]
-            r2 = self.cycle_times_df['Wet Kinetics Regression R2'][n-1] if 'Wet Kinetics Regression R2' in self.cycle_times_df.columns else None
+            r2 = self.cycle_times_df['Wet Kinetics Regression R2'][n-1]\
+                if 'Wet Kinetics Regression R2' in self.cycle_times_df.columns else None
             if isfinite(k): #and isfinite(lnco2_t0):
                 x_fit = f_center['Residence Time [s]'].values
-                y_fit = (-k * x_fit) +  self.constant_lnco2_0 #lnco2_t0  # Correct sign for -k
-                label = f"Fit: ln[CO2] = -{k:.3f}·t + {self.constant_lnco2_0:.3f} (R² = {r2:.3f})" if r2 is not None and isfinite(r2) else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
+                y_fit = (-k * x_fit) +  self.constant_lnco2_0
+                #lnco2_t0  # Correct sign for -k
+                label = f"Fit: ln[CO2] = -{k:.3f}·t + {self.constant_lnco2_0:.3f}\
+                    (R² = {r2:.3f})" if r2 is not None and isfinite(r2)\
+                    else "Fit: ln[CO2] = -k·t + ln[CO2]_0"
                 ax2.plot(x_fit, y_fit, '--', color='red', label=label)
             ax2.set_xlabel("Residence Time [s]")
             ax2.set_title(f'Cycle #{n} Kinetics Regression')
@@ -294,14 +382,18 @@ class CapacityAnalysis(QMainWindow):
         self.figure2.tight_layout()
         self.canvas2.draw()
 
-    #Calculate variables which only depend on df
     def calculate_secondary(self):
+        """Calculate variables which only depend on df"""
+        print('calculating secondary')
+        #Refresh dataframes
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
-        self.cycle_numbers = self.cycle_times_df['Cycle'].tolist()
-        self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
-
         self.df['TimeDiff'] = self.df.index.diff()
+        self.cycle_numbers = self.cycle_times_df['Cycle'].tolist()
+        self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}\
+                                 /{max(self.cycle_numbers)}')
+
+        
         reactor_pressure = 101325 #Pa
         gas_constant_r = 8.3145
         reactor_temp_c = 55
@@ -320,38 +412,44 @@ class CapacityAnalysis(QMainWindow):
             self.df['CO2 / N2'] = self.df['Carbon dioxide'] / self.df['Nitrogen']
             co2_ref_col = 'CO2 / N2'
 
-        correction = float(self.analysis.reactor_input_ratio)/float(self.analysis.qms_input_ratio)  
+        correction = float(self.analysis.state_text['Reactor Input Ratio (%)'])\
+            /float(self.analysis.state_text['QMS Input Ratio (%)'])  
         self.df['yCO2 [%]'] = self.df[co2_ref_col] * correction * 100
-        input_flow_rate_sccm = float(self.analysis.input_flow_rate)
+        input_flow_rate_sccm = float(self.analysis.state_text['Input Flow Rate [SCCM]'])
         input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
-        co2_input_flow_rate_molar = input_flow_rate_molar * float(self.analysis.reactor_input_ratio) / 100 #since the input is a %
-        self.df['[CO2]']=self.df['yCO2 [%]']/100*reactor_pressure/gas_constant_r/reactor_temp_k
+        co2_input_flow_rate_molar = input_flow_rate_molar\
+              * float(self.analysis.state_text['Reactor Input Ratio (%)']) / 100
+        self.df['[CO2]']=self.df['yCO2 [%]']/100*reactor_pressure\
+            /gas_constant_r/reactor_temp_k
         self.df['ln[CO2]'] = log(self.df['[CO2]'])
-        self.df['CO2 Partial Flow Rate Out [mol/s]'] = self.df['yCO2 [%]']/100* input_flow_rate_molar
-        self.df['CO2 Absorbed [mol]'] = maximum(
-            (co2_input_flow_rate_molar - self.df['CO2 Partial Flow Rate Out [mol/s]']) * self.df['TimeDiff'].dt.total_seconds(),
-            0
-        )
-        
+        self.df['CO2 Partial Flow Rate Out [mol/s]']\
+              = self.df['yCO2 [%]']/100* input_flow_rate_molar
+        self.df['CO2 Absorbed [mol]']\
+              = maximum((co2_input_flow_rate_molar\
+                          - self.df['CO2 Partial Flow Rate Out [mol/s]'])\
+                              * self.df['TimeDiff'].dt.total_seconds(), 0)
         self.analysis.mdf = self.df
         self.analysis.cycle_times_df = self.cycle_times_df
-        for param in [co2_ref_col, 'yCO2 [%]', '[CO2]', 'ln[CO2]', 'CO2 Partial Flow Rate Out [mol/s]', 'CO2 Absorbed [mol]']:
-            if param not in self.analysis.other_parameters:
-                self.analysis.other_parameters.append(param)
-        self.analysis.viewer_instance.update_plot()
+        for param in [co2_ref_col, 'yCO2 [%]', '[CO2]', 'ln[CO2]',\
+                       'CO2 Partial Flow Rate Out [mol/s]', 'CO2 Absorbed [mol]']:
+            if param not in self.analysis.state_qlist['Selected Others']:
+                self.analysis.state_qlist['Selected Others'].append(param)
         return
 
-    #Calculate variables which rely on df and cycle_times_df
     def calculate_sorption(self):
+        """Calculate variables which rely on df and cycle_times_df"""
+
         #Refresh dataframes
         self.df = self.analysis.mdf
         self.cycle_times_df = self.analysis.cycle_times_df
         #Preliminary calculations
         co2_molar_mass = 44.01
-        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
-        sorbent_mass = float(self.analysis.sorbent_mass_input.text())
-        regression_start_percent = float(self.analysis.sorption_start_input.text())/100
-        regression_end_percent = float(self.analysis.sorption_end_input.text())/100
+        sorbent_vol = float(self.analysis.state_text['Sorbent Mass [g]'])\
+              / float(self.analysis.state_text['Sorbent Bulk Density [g/mL]'])
+        sorbent_mass = float(self.analysis.state_text['Sorbent Mass [g]'])
+        regression_start_percent = \
+            float(self.analysis.state_text['Regression Start (%)'])/100
+        regression_end_percent = float(self.analysis.state_text['Regression End (%)'])/100
         
         #Instantiate return lists
         start_times = []
@@ -365,38 +463,57 @@ class CapacityAnalysis(QMainWindow):
             #Prep data frame
             f = self.df
             if 'Cycle Identifier' in self.df.columns:
-                f = self.df[(self.df['Cycle Identifier'] == 3) & (self.df['No Completed Cycles'] == n)]
+                f = self.df[(self.df['Cycle Identifier'] == 3) & \
+                            (self.df['No Completed Cycles'] == n)]
             #Cut the single cycle dataframe based on sorption_start/end_cut
-            start_cut = self.cycle_times_df['Sorption Start Time'][n-1]
-            end_cut = self.cycle_times_df['Sorption End Time'][n-1]
+            # cut_time = start + pd.to_timedelta(float_val, unit='m')
+            start_time = self.cycle_times_df['Start'][n-1]
+            start_cut = start_time + pd.to_timedelta(\
+                self.cycle_times_df['Sorption Start Time'][n-1],unit='m')
+            end_cut = start_time + pd.to_timedelta(\
+                self.cycle_times_df['Sorption End Time'][n-1],unit='m')
             f = f[(f.index > start_cut) & (f.index < end_cut)]
-            regression_start_time = f[f['yCO2 [%]']/100 > regression_start_percent].index.min()
-            regression_end_time = f[(f['yCO2 [%]']/100 > regression_end_percent) & (f.index > regression_start_time)].index.min()
-            start_times.append(regression_start_time)
-            end_times.append(regression_end_time)
+            regression_start_time = \
+                f[f['yCO2 [%]']/100 > regression_start_percent].index.min()
+            regression_end_time = \
+                f[(f['yCO2 [%]']/100 > regression_end_percent) & \
+                  (f.index > regression_start_time)].index.min()
+            start_times.append((regression_start_time - start_time).total_seconds()/60)
+            end_times.append((regression_end_time - start_time).total_seconds()/60)
             f_absorbed = f[(f.index > start_cut) & (f.index < regression_end_time)]
             total_absorbed.append(sum(f_absorbed['CO2 Absorbed [mol]']))
             min_gammas.append(f['yCO2 [%]'][f['yCO2 [%]'] > 0].min()/100)
             duration_seconds.append((end_cut - start_cut).total_seconds())
-        #Push return lists to the cycle times dataframe
+
         sorption_durations = [
-            f"{int(ds // 3600)}:{int((ds % 3600) // 60):02d}:{int(ds % 60):02d}" if pd.notna(ds) else nan
+            f"{int(ds // 3600)}:{int((ds % 3600) // 60):02d}:{int(ds % 60):02d}"\
+                if pd.notna(ds) else nan
             for ds in duration_seconds
         ]
+
+        #Push return lists to the cycle times dataframe
         self.cycle_times_df['Sorption Duration'] = sorption_durations
         self.cycle_times_df['Regression Start Time'] = start_times
         self.cycle_times_df['Regression End Time'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
         self.cycle_times_df['Experimental CO2absorbed [mol]'] = total_absorbed
-        self.cycle_times_df['Experimental CO2absorbed [g]'] = self.cycle_times_df['Experimental CO2absorbed [mol]'] * co2_molar_mass
-        self.cycle_times_df['Sorbent Capacity [gCO2/gSorbent]'] = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_mass
-        self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_vol
-        self.cycle_times_df['Capacity % to KPI'] = self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] / 0.0283 #constant pulled from sheet
+        self.cycle_times_df['Experimental CO2absorbed [g]']\
+              = self.cycle_times_df['Experimental CO2absorbed [mol]'] * co2_molar_mass
+        self.cycle_times_df['Sorbent Capacity [gCO2/gSorbent]']\
+              = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_mass
+        self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]']\
+              = self.cycle_times_df['Experimental CO2absorbed [g]'] / sorbent_vol
+        self.cycle_times_df['Capacity % to KPI']\
+              = self.cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'] / 0.0283
+              # ABOVE CONSTANT PULLED FROM EXCEL, UNSURE OF ORIGIN
 
     def calculate_kinetics_dry(self):
-        self.analysis = self.analysis
-        self.df = self.analysis.mdf
+        """Uses the dry kinetics model to calculate the Rate Constant K"""
+    
+        #Refresh dataframe
         self.cycle_times_df = self.analysis.cycle_times_df
+        
+        #Define constants 
         reactor_pressure = 101325 #pa
         reactor_temp_c = 55
         reactor_temp_k = reactor_temp_c + 273
@@ -405,71 +522,105 @@ class CapacityAnalysis(QMainWindow):
         h20_molar_mass = 18.02
         inch_to_meter = 0.0254
         sccm_to_molar = reactor_pressure * (1e-6) / (60) / gas_constant_r / 273.15
-        input_flow_rate_sccm = float(self.analysis.input_flow_rate_input.text())
+        
+        #Propagate calculations using program inputs
+        input_flow_rate_sccm = float(self.analysis.state_text['Input Flow Rate [SCCM]'])
         input_flow_rate_molar = input_flow_rate_sccm * sccm_to_molar
-        input_flow_rate_meter = input_flow_rate_molar * 8.3145 * reactor_temp_k / reactor_pressure
-        co2_flow_rate_sccm = input_flow_rate_sccm * float(self.analysis.reactor_input_ratio_input.text()) / 100
+        input_flow_rate_meter = input_flow_rate_molar * 8.3145 * reactor_temp_k\
+              / reactor_pressure
+        co2_flow_rate_sccm = input_flow_rate_sccm\
+              * float(self.analysis.state_text['Reactor Input Ratio (%)']) / 100
         co2_flow_rate_molar = co2_flow_rate_sccm * sccm_to_molar
-        reactor_area = pi*((float(self.analysis.reactor_diameter_input.text()) * inch_to_meter / 2)**2)
-        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
-        packing_length_cm = sorbent_vol / (pi * (float(self.analysis.reactor_diameter_input.text()) * inch_to_meter * 50)**2)
+        reactor_area = pi*((float(self.analysis.state_text['Reactor Diameter [in]'])\
+              * inch_to_meter / 2)**2)
+        sorbent_vol = float(self.analysis.state_text['Sorbent Mass [g]'])\
+              / float(self.analysis.state_text['Sorbent Bulk Density [g/mL]'])
+        packing_length_cm = sorbent_vol\
+              / (pi * (float(self.analysis.state_text['Reactor Diameter [in]'])\
+              * inch_to_meter * 50)**2)
         packing_volume = reactor_area * packing_length_cm / 100
         residence_time = packing_volume / input_flow_rate_meter
-        ah_before_reaction_gm3 = 6.112 * (e ** ((17.67*reactor_temp_c)/(reactor_temp_c+243.5))) * rh_before_reaction * h20_molar_mass / reactor_temp_k / 100 / 0.08314
+        ah_before_reaction_gm3 = 6.112 * (e ** ((17.67*reactor_temp_c)\
+              /(reactor_temp_c+243.5))) * rh_before_reaction * h20_molar_mass \
+              / reactor_temp_k / 100 / 0.08314
         ah_before_reaction = ah_before_reaction_gm3 / h20_molar_mass
-        co2_fraction_before = float(self.analysis.reactor_input_ratio_input.text()) / 100
+        co2_fraction_before = float(self.analysis.state_text['Reactor Input Ratio (%)'])\
+              / 100
+        
         #Below will be arrays if there are multiple cycles
         co2_fraction_after = self.cycle_times_df['Highest Sorption Point']
-        co2_consumed = co2_flow_rate_molar * (co2_fraction_before - co2_fraction_after) / co2_fraction_before / input_flow_rate_meter
+        co2_consumed = co2_flow_rate_molar * (co2_fraction_before - co2_fraction_after)\
+            / co2_fraction_before / input_flow_rate_meter
         ah_after_reaction = ah_before_reaction - co2_consumed
         co2_before_reaction = co2_flow_rate_molar / input_flow_rate_meter
         co2_after_reaction = co2_before_reaction - co2_consumed
-        rate_constant_k_dry = (log(co2_after_reaction / ah_after_reaction) - log(co2_before_reaction / ah_before_reaction)) / (ah_before_reaction - co2_before_reaction) / (-residence_time)
+        rate_constant_k_dry = (log(co2_after_reaction / ah_after_reaction)\
+             - log(co2_before_reaction / ah_before_reaction))\
+             / (ah_before_reaction - co2_before_reaction) / (-residence_time)
+        
+        #Push the rate constant to cycle_times_df
         self.cycle_times_df['Rate Constant K (Dry)'] = rate_constant_k_dry
 
-    #Calculate variables which rely on Regression Start Time and end
     def calculate_kinetics_wet(self):
-        self.df = self.analysis.mdf
-        self.cycle_times_df = self.analysis.cycle_times_df
-        df = self.df
+        """Uses the wet kinetics odel to calculate the Rate Constant K and related"""
+        
+        #Refresh dataframes
+        cycle_times_df = self.analysis.cycle_times_df
+        df = self.analysis.mdf
+
+        #Setup new columns to be populated
         df['Accumulated CO2 Absorbed [mol]'] = nan
         df['Volume of Active Sorbent [mL]'] = nan
         df['Residence Time [s]'] = nan
-        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
+        rate_constants = []
+        r2s = []
+
+        #Calculate some experimental constants which are not cycle specific
+        sorbent_vol = float(self.analysis.state_text['Sorbent Mass [g]'])\
+              / float(self.analysis.state_text['Sorbent Bulk Density [g/mL]'])
         co2_molar_mass = 44.01
         self.constant_lnco2_0 = 1.312488772
-        sorbent_vol = float(self.analysis.sorbent_mass_input.text()) / float(self.analysis.bulk_density_input.text())
-        # Prepare lists for regression results
-        rate_constants = []
-        lnco2_t0s = []
-        r2s = []
+
+        #Perform calculations by iterating across each cycle
         for idx, n in enumerate(self.cycle_numbers):
-            cycle_times_df = self.cycle_times_df
             if 'No Completed Cycles' in df.columns:
                 f = df[df['No Completed Cycles'] == n]
             else:
                 f = df
             #Masking from beginning of sorption to end of integration
-            start_time = cycle_times_df['Sorption Start Time'][n-1]
-            end_time = cycle_times_df['Regression End Time'][n-1]
+            cycle_start = cycle_times_df['Start'][n-1]
+            # cut_time = start + pd.to_timedelta(float_val, unit='m')
+            start_time = cycle_start + pd.to_timedelta(\
+                cycle_times_df['Sorption Start Time'][n-1],unit='m')
+            end_time = cycle_start + pd.to_timedelta(\
+                cycle_times_df['Regression End Time'][n-1],unit='m')
+            
             mask = (f.index >= start_time) & (f.index <= end_time)
             # Compute cumulative sum for the masked slice
             absorbed_cumsum = f.loc[mask, 'CO2 Absorbed [mol]'].cumsum()
             if len(absorbed_cumsum > 0):
-                sorbent_active_volume = sorbent_vol - (absorbed_cumsum * co2_molar_mass \
-                                                    / (absorbed_cumsum[-1] * co2_molar_mass/ sorbent_vol))
+                sorbent_active_volume = sorbent_vol - \
+                    (absorbed_cumsum * co2_molar_mass \
+                     / (absorbed_cumsum[-1] * co2_molar_mass/ sorbent_vol))
             else: 
-                sorbent_active_volume = sorbent_vol - (absorbed_cumsum * co2_molar_mass \
-                                                   / cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'][n-1])
-            residence_time = sorbent_active_volume / float(self.analysis.input_flow_rate) * 60
+                sorbent_active_volume = sorbent_vol - \
+                    (absorbed_cumsum * co2_molar_mass \
+                    / cycle_times_df['Sorbent Capacity [gCO2/mLReactor]'][n-1])
+            residence_time = sorbent_active_volume\
+                  / float(self.analysis.state_text['Input Flow Rate [SCCM]']) * 60
             # Insert the cumulative sum into the main df for the same indices
-            df.loc[f.loc[mask].index, 'Accumulated CO2 Absorbed [mol]'] = absorbed_cumsum
-            df.loc[f.loc[mask].index, 'Volume of Active Sorbent [mL]'] = sorbent_active_volume
+            df.loc[f.loc[mask].index, 'Accumulated CO2 Absorbed [mol]']\
+                  = absorbed_cumsum
+            df.loc[f.loc[mask].index, 'Volume of Active Sorbent [mL]']\
+                  = sorbent_active_volume
             df.loc[f.loc[mask].index, 'Residence Time [s]'] = residence_time
 
             # Further trim the area to within the regression region
-            start_time = cycle_times_df['Regression Start Time'][n-1]
-            end_time = cycle_times_df['Regression End Time'][n-1]
+            # cut_time = start + pd.to_timedelta(float_val, unit='m')
+            start_time = cycle_start + pd.to_timedelta(\
+                cycle_times_df['Regression Start Time'][n-1],unit='m')
+            end_time = cycle_start + pd.to_timedelta(\
+                cycle_times_df['Regression End Time'][n-1],unit='m')
 
             f = f[(f.index > start_time) & (f.index < end_time)]
             # Linear regression: ln[CO2] = -k*t + intercept
@@ -480,10 +631,14 @@ class CapacityAnalysis(QMainWindow):
                 # y = -k * x + constant_lnco2_0 => y - constant_lnco2_0 = -k * x
                 y_adj = y - self.constant_lnco2_0
                 # Fit slope only
-                slope, _, r_value, p_value, std_err = linregress(x, y_adj)
-                rate_constant_k = -slope
+                try:
+                    slope, _, r_value, p_value, std_err = linregress(x, y_adj)
+                    rate_constant_k = -slope
+                    regression_r2 = r_value ** 2
+                except ValueError:
+                    rate_constant_k = 0
+                    regression_r2 = 0
                 # lnCO2_t0 = constant_lnco2_0  # Forced intercept
-                regression_r2 = r_value ** 2
             else:
                 rate_constant_k = nan
                 regression_r2 = nan
@@ -497,26 +652,21 @@ class CapacityAnalysis(QMainWindow):
         self.cycle_times_df['Wet Kinetics Regression R2'] = r2s
         return
 
-    def setup_metric_selector(self):
-        self.metric_selector.clear()
-        for metric in self.metrics:
-            self.metric_selector.addItem(metric)
-        # Select all metrics by default
-        for i in range(self.metric_selector.count()):
-            self.metric_selector.item(i).setSelected(True)
-
     def load_row(self):
+        #DEFUNCT
+        """Reads app save state and adjusts visual elements accordingly"""
         row = self.analysis.loaded_row
         if row != '':
             cycle_plot_elements = ast.literal_eval(row.get('Cycle Plot Elements', []))
             for i in range(self.ax1_param_list.count()):
-                self.ax1_param_list.item(i).setSelected(self.ax1_param_list.item(i).text() in cycle_plot_elements)
-            scale_cycle_graph = bool(ast.literal_eval(row.get('Scale Cycle Graph', 'False')))
+                self.ax1_param_list.item(i).setSelected(\
+                    self.ax1_param_list.item(i).text() in cycle_plot_elements)
+            scale_cycle_graph = bool(ast.literal_eval(\
+                row.get('Scale Cycle Graph', 'False')))
             self.scaling_checkbox.setChecked(scale_cycle_graph)
-
     
     def get_all_figures_for_pdf(self):
-        """Return a list of matplotlib Figure objects for all cycles (both ax1 and ax2 plots)."""
+        """Return a list of matplotlib Figure objects for all cycles"""
         figures = []
         # Save current state
         orig_cycle_index = self.current_cycle_index

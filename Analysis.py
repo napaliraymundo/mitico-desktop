@@ -54,33 +54,16 @@ from RawDataViewer import RawDataViewer
 class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        #Empty initializations and instantiate tab elements
-        self.filename = ""
+        
         self.mdf = pd.DataFrame()
         self.cycle_times_df = pd.DataFrame()
-        self.compound_list = []
         self.reactor_parameters = []
-        self.other_parameters = []
+
         self.status_text = ""
         self.status_error = ""
-        self.sorbent_mass = ""
-        self.reactor_diameter = ""
-        self.bulk_density = ""
-        self.packing_factor = ""
-        self.reference_gas = ""
-        self.reactor_input_ratio = ""
-        self.input_flow_rate = ""
-        self.qms_input_ratio = ""
-        self.sorption_start = ""
-        self.sorption_end = ""
-        self.loaded_row = ""
-        self.viewer_instance = DataViewer(self)
-        self.metrics_instance = TableViewer(self)
-        self.cycle_instance = CapacityAnalysis(self)
-        self.raw_data_instance = RawDataViewer(self)
-
 
         # OTHER VARIABLES
+        
         self.gas_abbr = {
             "":"",
             "Nitrogen": "N2",
@@ -91,17 +74,71 @@ class MyApp(QMainWindow):
             "Carbon dioxide": "CO2",
         }
 
+        #Load state with default app values
+        self.state_text = {
+            "Sorbent Mass [g]": "",
+            "Reactor Diameter [in]": "0.8",
+            "Sorbent Bulk Density [g/mL]": "",
+            "Input Flow Rate [SCCM]": "150",
+            "Packing Factor": "0.55",
+            "Reactor Input Ratio (%)": "10",
+            "QMS Input Ratio (%)": "",
+            "Regression Start (%)": "0.5",
+            "Regression End (%)": "9",
+        }
+        self.state_qlist = {    
+            "Selected Compounds": ['Carbon Dioxide'],
+            "Selected Parameters": [],
+            "Selected Others": [],
+            "Cycle Plot Elements": ['yCO2 [%]'],
+            "Selected Metrics": ['Capacity % to KPI']
+        }
+
+        self.state_other = {
+            "Reference Gas": "Argon",  
+            "Scale Run Graph": True,
+            "Scale Cycle Graph": True,
+            "Start Cuts": [],
+            "End Cuts": [],
+            "Regression Start Cuts": [],
+            "Regression End Cuts": [],
+        }
+
+        # Create new instances
+        self.viewer_instance = DataViewer(self)
+        self.cycle_instance = CapacityAnalysis(self)
+        self.metrics_instance = TableViewer(self)
+        self.raw_data_instance = RawDataViewer(self)
+
         self.build_layout()
 
+        self.widget_lookup = {
+            "Sorbent Mass [g]": self.sorbent_mass_input,
+            "Reactor Diameter [in]": self.reactor_diameter_input,
+            "Sorbent Bulk Density [g/mL]": self.bulk_density_input,
+            "Input Flow Rate [SCCM]": self.input_flow_rate_input,
+            "Packing Factor": self.packing_factor_input,
+            "Reactor Input Ratio (%)": self.reactor_input_ratio_input,
+            "QMS Input Ratio (%)": self.qms_input_ratio_input,
+            "Regression Start (%)": self.regression_start_input,
+            "Regression End (%)": self.regression_end_input,
+            "Selected Compounds": self.viewer_instance.compound_list,
+            "Selected Parameters": self.viewer_instance.reactor_param_list,
+            "Selected Others": self.viewer_instance.other_param_list,
+            "Cycle Plot Elements": self.cycle_instance.ax1_param_list,
+            "Selected Metrics": self.metrics_instance.param_list
+        }
+
+
     def check_run_parameters(self):
+        print('check run parameters')
         """On text input change or data load, check values OK and see if changed"""
-        if getattr(self, 'first_load', False):
-            return
         #Reset status text, and default to no saving parameters
         self.parameter_status.setStyleSheet("")
         
         #Change detection for gas dropdown
-        if self.reference_gas_dropdown.currentText() != self.reference_gas:
+        if self.reference_gas_dropdown.currentText() != self.state_other['Reference Gas']:
+            self.state_other['Reference Gas'] = self.reference_gas_dropdown.currentText()
             #Mark that parameters have been changed
             self.parameter_status.setStyleSheet("")
             self.parameter_status.setText("Status: Run Parameters Changed")
@@ -110,69 +147,32 @@ class MyApp(QMainWindow):
             self.reactor_input_ratio_label.setText(f"Reactor Input Ratio (%)")
         
         #Change detection for text inputs
-        inputs = [
-        (self.sorbent_mass_input, 'sorbent_mass'),
-        (self.reactor_diameter_input,'reactor_diameter'),
-        (self.bulk_density_input,'bulk_density'),
-        (self.packing_factor_input,'packing_factor'),
-        (self.input_flow_rate_input, 'input_flow_rate'),
-        (self.reactor_input_ratio_input, 'reactor_input_ratio'),
-        (self.qms_input_ratio_input, 'qms_input_ratio'),
-        (self.sorption_start_input, 'sorption_start'),
-        (self.sorption_end_input, 'sorption_end'),
-        ]
-        for widget, attr_name in inputs:
+        for name, state in self.state_text.items():
+            widget = self.widget_lookup[name]
             value = widget.text()
             try: #If the value is a valid float, detect change
                 float(value)
                 #If different than stored value, mark as changed and update value
-                if value != getattr(self, attr_name):
+                if value != state:
                     self.parameter_status.setStyleSheet("")
                     self.parameter_status.setText("Status: Run Parameters Changed")
-            except ValueError:
+                    self.state_text[name] = value
+            except ValueError as e:
                 #Throw error if not a number, disable graphs
                 self.parameter_status.setStyleSheet("color: red")
                 self.parameter_status.setText(f"Error: '{value}' is not a number")
                 return False #Check run parameters fails
 
-        # Always update instance variables from input widgets after validation
-        for widget, attr_name in inputs:
-            setattr(self, attr_name, widget.text())
-
         #Propagate changes and enable buttons if parameters OK
         if not self.first_load: self.update_all_calculations()
         return True
-    
-    def update_all_calculations(self):
-        self.cycle_instance.cut_start()
-        self.cycle_instance.cut_end()
-        self.cycle_instance.calculate_secondary()
-        self.cycle_instance.calculate_sorption()    
-        self.cycle_instance.calculate_kinetics_wet()
-        self.cycle_instance.calculate_kinetics_dry()
-        self.cycle_instance.update_plots()
-        self.viewer_instance.update_data()
-        self.viewer_instance.update_plot()
-        self.metrics_instance.reload_dropdown()
-        self.metrics_instance.update_table()
-        self.metrics_instance.update_plot()
-        self.raw_data_instance.update_table()
-
-    def update_cycles(self):
-        self.cycle_instance.cut_start()
-        self.cycle_instance.cut_end()
-        self.cycle_instance.calculate_secondary()
-        self.cycle_instance.calculate_sorption()    
-        self.cycle_instance.calculate_kinetics_wet()
-        self.cycle_instance.calculate_kinetics_dry()
-        self.cycle_instance.update_plots()
-        self.metrics_instance.update_table()
-        self.metrics_instance.update_plot()
-
+   
     def ensure_run_parameters_csv(self):
+        print('ensure run parameters')
+        #TODO: THIS NEEDS TO NOT DELETE FILES IF THEY DON'T HAVE ALL THE RIGHT HEADERS
         """Ensure the run_parameters.csv exists and has the correct header."""
         csv_file = user_data_path("run_parameters.csv")
-        expected_header = ["Filename"] + list(self.parameters.keys())
+        expected_header = ["Filename"] + list(self.state_text.keys()) + list(self.state_qlist.keys()) + list(self.state_other.keys())
         file_exists = os.path.isfile(csv_file)
         header_ok = False
         if file_exists:
@@ -195,127 +195,71 @@ class MyApp(QMainWindow):
                 writer.writerow(expected_header)
 
     def load_run_parameters(self):
+        print('load run parameters')
         """Load run parameters from a run_parameters.csv indexed by filename."""
         csv_file = user_data_path("run_parameters.csv")
-        param_map = {
-            "Sorbent Mass [g]": (self.sorbent_mass_input, "sorbent_mass", ''),
-            "Reactor Diameter [in]": (self.reactor_diameter_input, "reactor_diameter", '0.8'),
-            "Sorbent Bulk Density [g/mL]": (self.bulk_density_input, "bulk_density", ''),
-            "Packing Factor": (self.packing_factor_input, "packing_factor", '0.55'),
-            "Input Flow Rate [SCCM]": (self.input_flow_rate_input, "input_flow_rate", '150'),
-            "Reactor Input Ratio (%)": (self.reactor_input_ratio_input, "reactor_input_ratio", '10'),
-            "QMS Input Ratio (%)": (self.qms_input_ratio_input, "qms_input_ratio", ''),
-            "Sorption Start (%)": (self.sorption_start_input, "sorption_start", '0.5'),
-            "Sorption End (%)": (self.sorption_end_input, "sorption_end", '9'),
-        }
-        try:
-            self.parameters = {
-                "Save Timestamp": "",
-                "Sorbent Mass [g]": "",
-                "Reactor Diameter [in]": "",
-                "Sorbent Bulk Density [g/mL]": "",
-                "Input Flow Rate [SCCM]": "",
-                "Packing Factor": "",
-                "Reference Gas": "",
-                "Reactor Input Ratio (%)": "",
-                "QMS Input Ratio (%)": "",
-                "Sorption Start (%)": "",
-                "Sorption End (%)": "",
-                "Selected Compounds": [],
-                "Selected Parameters": [],
-                "Selected Others": [],
-                "Scale Run Graph": False,
-                "Start Cuts": [],
-                "End Cuts": [],
-                "Cycle Plot Elements": [],
-                "Scale Cycle Graph": False,
-                "Selected Metrics:": []
-            }
-            self.ensure_run_parameters_csv()
-            self.first_load = True  # Set before any field changes
-            found_row = False
-            if os.path.isfile(csv_file):
-                with open(csv_file, mode="r") as file:
-                    reader = csv.DictReader(file)
-                    csv_filenames = [row["Filename"] for row in list(reader)]
-                    # Debug print
-                    print(f"[DEBUG] self.filename: {self.filename}, CSV filenames: {csv_filenames}")
-                    file.seek(0)
-                    next(reader)  # skip header
-                    for row in list(reader)[::-1]:
-                        if row["Filename"] == self.filename:
-                            print('Found', row)
-                            found_row = True
-                            for key, (widget, attr, _) in param_map.items():
-                                value = row.get(key, "")
-                                widget.setText(value)
-                                setattr(self, attr, value)
-                                self._last_committed_values[widget] = value
-                            ref_gas = row.get("Reference Gas", "")
-                            self.reference_gas_dropdown.setCurrentText(ref_gas)
-                            self.reference_gas = ref_gas
-                            self.parameter_status.setText("Status: App State Loaded")
-                            self.loaded_row = row
-                            if len(list(ast.literal_eval(row.get('Start Cuts')))) == len(self.cycle_times_df):
-                                self.cycle_times_df['Sorption Start Time'] = pd.to_datetime(list(ast.literal_eval(row.get('Start Cuts'))))
-                                self.cycle_times_df['Sorption End Time'] = pd.to_datetime(list(ast.literal_eval(row.get('End Cuts'))))
-                            break
-            if not found_row:
-                for _, (widget, attr, default) in param_map.items():
-                    setattr(self, attr, default)
-                    widget.setText(default)
-                    self._last_committed_values[widget] = default
-                self.reference_gas_dropdown.setCurrentText('Argon')
-                self.reference_gas = 'Argon'
-            self.first_load = False
-            self.check_run_parameters()
-        except Exception as e:
-            pass
+        self.ensure_run_parameters_csv()
+        self.first_load = True  # Set before any field changes
+        found_row = False
+        with open(csv_file, mode="r") as file:
+            reader = csv.DictReader(file)
+            file.seek(0)
+            # next(reader)  # skip header
+            for row in list(reader)[::-1]:
+                if row["Filename"] == self.filename:
+                    print('found row')
+                    self.loaded_row = row
+                    found_row = True
+                    for key, _ in self.state_text.items(): 
+                        if row[key] != '':
+                            widget = self.widget_lookup[key]
+                            widget.setText(row[key])
+                            self.state_text[key] = row[key]
+                    for key, _ in self.state_qlist.items():
+                        qlist = self.widget_lookup[key]
+                        qlist.blockSignals(True)
+                        for i in range(qlist.count()):
+                            if qlist.item(i).text() in row[key]:
+                                qlist.item(i).setSelected(True)
+                            else: qlist.item(i).setSelected(False)
+                        self.state_qlist[key] = ast.literal_eval(row[key])
+                        print('resetting state to ', row[key])
+                        qlist.blockSignals(False)
+                    if row['Reference Gas'] != '':
+                        self.reference_gas_dropdown.setCurrentText(row['Reference Gas'])
+                        self.state_other['Reference Gas'] = row['Reference Gas']
+                    self.parameter_status.setText("Status: App State Loaded")
+                    break
+                else: 
+                    print('row not found')
+                    self.loaded_row = ''
+        self.first_load = False
+        print('got to checking')
+        self.check_run_parameters()
 
     def save_run_parameters(self):
+        print('save run parameters')
         """Save run parameters to run_parameters.csv indexed by filename."""
         csv_file = user_data_path("run_parameters.csv")
         file_name = self.file_label.text()[6:]
-        self.parameters = {
-            "Save Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Sorbent Mass [g]": self.sorbent_mass_input.text(),
-            "Reactor Diameter [in]": self.reactor_diameter_input.text(),
-            "Sorbent Bulk Density [g/mL]": self.bulk_density_input.text(),
-            "Input Flow Rate [SCCM]": self.input_flow_rate_input.text(),
-            "Packing Factor": self.packing_factor_input.text(),
-            "Reference Gas": self.reference_gas_dropdown.currentText(),
-            "Reactor Input Ratio (%)": self.reactor_input_ratio_input.text(),
-            "QMS Input Ratio (%)": self.qms_input_ratio_input.text(),
-            "Sorption Start (%)": self.sorption_start_input.text(),
-            "Sorption End (%)": self.sorption_end_input.text(),
-            "Selected Compounds": [item.text() for item in self.viewer_instance.compound_list.selectedItems()],
-            "Selected Parameters": [item.text() for item in self.viewer_instance.reactor_param_list.selectedItems()],
-            "Selected Others": [item.text() for item in self.viewer_instance.other_param_list.selectedItems()],
-            "Scale Run Graph": self.viewer_instance.scaling_checkbox.isChecked(),
-            "Start Cuts": [str(dt) for dt in self.cycle_times_df['Sorption Start Time']],
-            "End Cuts": [str(dt) for dt in self.cycle_times_df['Sorption End Time']],
-            "Cycle Plot Elements": [item.text() for item in self.cycle_instance.ax1_param_list.selectedItems()],
-            "Scale Cycle Graph": self.cycle_instance.scaling_checkbox.isChecked(),
-            "Selected Metrics:": [item.text() for item in self.metrics_instance.param_list.selectedItems()]
-        }
         try:
             self.ensure_run_parameters_csv()
             with open(csv_file, mode="a", newline="") as file:
                 writer = csv.writer(file)
-                writer.writerow([file_name] + list(self.parameters.values()))
+                text_vals = [vals for vals in self.state_text.values()]
+                qlist_vals = [vals for vals in self.state_qlist.values()]
+                other_vals = [vals for vals in self.state_other.values()]
+                writer.writerow([file_name] + text_vals + qlist_vals + other_vals)
+                print('writing', [file_name] + text_vals + qlist_vals + other_vals)
             # Change status and propagate data
-            self.load_run_parameters()
-            self.viewer_instance.load_row()
-            self.metrics_instance.load_row()
-            self.cycle_instance.load_row()
             self.parameter_status.setText("Status: App State Saved")
         except Exception as e:
             pass
     
     def load_qms_data(self):
         """Load a QMS CSV file and propagate UI changes based on data"""
-        if self.select_button.text() == "Load New QMS Data (Restart)": self.restart_analysis()
-
+        self.tabs.setHidden(True)
+        self.run_parameters_groupbox.setEnabled(False)
         #Find file
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(
@@ -325,7 +269,7 @@ class MyApp(QMainWindow):
             "CSV Files (*.csv)",
             options=options
         )
-        if file_name:
+        if file_name: #Effectively we want to start from scratch
             self.filepath = file_name
             self.filename = f"{os.path.basename(file_name)}"
             try:
@@ -334,6 +278,7 @@ class MyApp(QMainWindow):
                 self.reference_gas_dropdown.addItems(self.compound_list)
                 self.file_label.setStyleSheet("")
                 self.file_label.setText(f"File: {os.path.basename(file_name)}")
+                self.file_label.setMaximumWidth(300)  # adjust as needed
                 self.file_label.setToolTip(file_name)
                 self.time_label.setText(f"Datetime: {self.mdf.index[0]}")
                 self.duration_label.setText(
@@ -345,13 +290,14 @@ class MyApp(QMainWindow):
                 self.baldy2_button.setEnabled(True)
                 self.baldy3_button.setEnabled(True)
                 self.select_button.setText("Load New QMS Data (Restart)")
+                print('loading')
                 self.load_run_parameters()
-                self.viewer_instance.load_row()
-                self.metrics_instance.load_row()
-                self.cycle_instance.load_row()
                 self.save_pdf_button.setEnabled(True)  # Enable PDF button when data is loaded
+                print('loaded')
             except ValueError as e:
                 self.file_label.setStyleSheet("color: red")
+                print('ERROR 2')
+                print(e)
                 self.file_label.setText(f"File: {e}")
                 self.time_label.setText("Datetime:")
                 self.duration_label.setText("Duration:")
@@ -361,6 +307,9 @@ class MyApp(QMainWindow):
                 self.baldy2_button.setEnabled(False)
                 self.baldy3_button.setEnabled(False)
                 self.run_parameters_groupbox.setEnabled(False)
+        else: #Nothing has happened, cancel button was selected
+            self.tabs.setHidden(False)
+            self.run_parameters_groupbox.setEnabled(True)
 
     def load_reactor_data(self):
         """Load a data folder from the Baldy3 backend and propagate UI changes"""
@@ -378,11 +327,10 @@ class MyApp(QMainWindow):
                 self.baldy3_button.setEnabled(False)
                 self.baldy2_button.setEnabled(False)
                 self.load_run_parameters()
-                self.viewer_instance.load_row()
-                self.metrics_instance.load_row()
-                self.cycle_instance.load_row()
             except ValueError as e:
                 self.secondary_status.setStyleSheet("color: red")
+                print('ERROR 3')
+                print(e)
                 self.secondary_status.setText(f'Status: Folder invalid – Try another Folder')
         else: self.secondary_status.setText("Status: No Secondary File Loaded")
 
@@ -407,38 +355,40 @@ class MyApp(QMainWindow):
                 self.baldy2_button.setEnabled(False)
                 self.baldy3_button.setEnabled(False)
                 self.load_run_parameters()
-                self.viewer_instance.load_row()
-                self.metrics_instance.load_row()
-                self.cycle_instance.load_row()
             except ValueError as e:
                 self.secondary_status.setStyleSheet("color: red")
+                print('ERROR 4')
+                print(e)
                 self.secondary_status.setText(f'Status: File invalid – Try another CSV')
         else: self.secondary_status.setText("Status: No Secondary File Loaded")
 
-
-    def restart_analysis(self):        
-        # Create new instances
-        self.metrics_instance.param_list = None
-        self.viewer_instance.other_param_list = None
-        self.viewer_instance.reactor_param_list = None
-        self.viewer_instance.compound_list = None
-        self.viewer_instance = DataViewer(self)
-        self.cycle_instance = CapacityAnalysis(self)
-        self.metrics_instance = TableViewer(self)
-        self.raw_data_instance = RawDataViewer(self)
-        # Remove all tabs
-        self.tabs.clear()
-
-        # Add new tabs
-        self.tabs.addTab(self.viewer_instance, "Run Graph")
-        self.tabs.addTab(self.cycle_instance, "Cycle Graph")
-        self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
-        self.tabs.addTab(self.raw_data_instance, "Raw Data")
-        # Remove all items in reference_gas_dropdown
-        self.reference_gas_dropdown.clear()
+     
+    def update_all_calculations(self):
+        print('updating all')
+        print(self.state_text)
+        print(self.state_qlist)
+        print(self.state_other)
+        self.tabs.setHidden(False)
+        # self.cycle_instance.pull_state()
+        self.cycle_instance.cut_start()
+        self.cycle_instance.cut_end()
+        self.cycle_instance.cut_regression_start()
+        self.cycle_instance.cut_regression_end()
+        self.cycle_instance.calculate_secondary()
+        self.cycle_instance.calculate_sorption()    
+        self.cycle_instance.calculate_kinetics_wet()
+        self.cycle_instance.calculate_kinetics_dry()
+        self.cycle_instance.update_plots()
+        self.viewer_instance.pull_state()
+        self.viewer_instance.update_plot()
+        self.metrics_instance.pull_state()
+        self.metrics_instance.update_table()
+        self.metrics_instance.update_plot()
+        self.raw_data_instance.update_table()
 
 
     def build_layout(self):
+        print('building layout')
         self.setWindowTitle("Mitico Data Analysis")
         # Remove global stylesheet
         self.screen_geometry = QApplication.desktop().availableGeometry()
@@ -451,11 +401,11 @@ class MyApp(QMainWindow):
         # Main layout
         self.main_layout = QHBoxLayout()
         toolbox_widget = QWidget()
-        toolbox_widget.setFixedWidth(300)
-        toolbox_layout = QVBoxLayout()
-        toolbox_layout.setSpacing(10)  # Increase vertical spacing between widgets
-        toolbox_layout.setContentsMargins(6, 6, 6, 6)  # Keep margins
-        self.viewer_widget = QWidget()
+        # toolbox_widget.setFixedWidth(300)
+        self.toolbox_layout = QVBoxLayout()
+        self.toolbox_layout.setSpacing(10)  # Increase vertical spacing between widgets
+        self.toolbox_layout.setContentsMargins(6, 6, 6, 6)  # Keep margins
+        viewer_widget = QWidget()
         self.viewer_layout = QVBoxLayout()
     
         # LOAD QMS SECTION
@@ -474,7 +424,7 @@ class MyApp(QMainWindow):
 
         qms_groupbox = QGroupBox("QMS File Management")
         qms_groupbox.setLayout(qms_groupbox_layout)
-        toolbox_layout.addWidget(qms_groupbox)
+        self.toolbox_layout.addWidget(qms_groupbox)
 
         # LOAD OTHER DATA SECTION
         self.baldy3_button = QPushButton("Baldy3: Load Data Folder")
@@ -493,20 +443,53 @@ class MyApp(QMainWindow):
         sensor_groupbox_layout.addWidget(self.secondary_status)
 
         sensor_groupbox.setLayout(sensor_groupbox_layout)
-        toolbox_layout.addWidget(sensor_groupbox)
+        self.toolbox_layout.addWidget(sensor_groupbox)
         
 
         # RUN PARAMETERS SECTION
         self.sorbent_mass_input = QLineEdit()
+        self.sorbent_mass_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.sorbent_mass_input))
+
         self.reactor_diameter_input = QLineEdit()
+        self.reactor_diameter_input.editingFinished.connect(\
+            lambda : self._on_editing_finished(self.reactor_diameter_input))
+        self.reactor_diameter_input.setText('0.8')
+
         self.bulk_density_input = QLineEdit()
+        self.bulk_density_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.bulk_density_input))
         self.packing_factor_input = QLineEdit()
+        self.packing_factor_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.packing_factor_input))
+        self.packing_factor_input.setText('0.55')
+
         self.reactor_input_ratio_input = QLineEdit()
+        self.reactor_input_ratio_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.reactor_input_ratio_input))
+
         self.reference_gas_dropdown = QComboBox()
+        self.reference_gas_dropdown.currentIndexChanged.connect(\
+            self.check_run_parameters)
+
         self.input_flow_rate_input = QLineEdit()
+        self.input_flow_rate_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.input_flow_rate_input))
+        self.input_flow_rate_input.setText('150')
+
         self.qms_input_ratio_input = QLineEdit()
-        self.sorption_start_input = QLineEdit()
-        self.sorption_end_input = QLineEdit()
+        self.qms_input_ratio_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.qms_input_ratio_input))
+
+        self.regression_start_input = QLineEdit()
+        self.regression_start_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.regression_start_input))
+        self.regression_start_input.setText('0.5')
+
+        self.regression_end_input = QLineEdit()
+        self.regression_end_input.editingFinished.connect(\
+            lambda: self._on_editing_finished(self.regression_end_input))
+        self.regression_end_input.setText('9')
 
         self.run_parameters_groupbox = QGroupBox("Run Parameters")
         run_parameters_layout = QVBoxLayout()
@@ -561,24 +544,24 @@ class MyApp(QMainWindow):
         qms_input_ratio_layout.addWidget(self.qms_input_ratio_input)
         run_parameters_layout.addLayout(qms_input_ratio_layout)
 
-        sorption_start_layout = QHBoxLayout()
-        sorption_start_label = QLabel("Sorption Start (%):")
-        sorption_start_layout.addWidget(sorption_start_label)
-        sorption_start_layout.addWidget(self.sorption_start_input)
-        run_parameters_layout.addLayout(sorption_start_layout)
+        regression_start_layout = QHBoxLayout()
+        regression_start_label = QLabel("Regression Start (%):")
+        regression_start_layout.addWidget(regression_start_label)
+        regression_start_layout.addWidget(self.regression_start_input)
+        run_parameters_layout.addLayout(regression_start_layout)
 
-        sorption_end_layout = QHBoxLayout()
-        sorption_end_label = QLabel("Sorption End (%):")
-        sorption_end_layout.addWidget(sorption_end_label)
-        sorption_end_layout.addWidget(self.sorption_end_input)
-        run_parameters_layout.addLayout(sorption_end_layout)
+        regression_end_layout = QHBoxLayout()
+        regression_end_label = QLabel("Regression End (%):")
+        regression_end_layout.addWidget(regression_end_label)
+        regression_end_layout.addWidget(self.regression_end_input)
+        run_parameters_layout.addLayout(regression_end_layout)
 
         self.parameter_status = QLabel("Status: Waiting for QMS data load")
         run_parameters_layout.addWidget(self.parameter_status)
 
         self.run_parameters_groupbox.setLayout(run_parameters_layout)
         self.run_parameters_groupbox.setEnabled(False)
-        toolbox_layout.addWidget(self.run_parameters_groupbox)
+        self.toolbox_layout.addWidget(self.run_parameters_groupbox)
 
         # RUN ANALYSIS SECTION
         self.tabs = QTabWidget()
@@ -587,6 +570,9 @@ class MyApp(QMainWindow):
         self.tabs.addTab(self.cycle_instance,"Cycle Graph")
         self.tabs.addTab(self.metrics_instance, "Cycle Metrics")
         self.tabs.addTab(self.raw_data_instance, "Raw Data")
+        self.tabs.setHidden(True)
+        self.viewer_layout.addWidget(self.tabs)
+
 
         self.save_parameters_button = QPushButton("Save App State")
         self.save_pdf_button = QPushButton("Save Full PDF Report")
@@ -600,14 +586,14 @@ class MyApp(QMainWindow):
         analysis_layout.addWidget(self.save_parameters_button)
 
         analysis_groupbox.setLayout(analysis_layout)
-        toolbox_layout.addWidget(analysis_groupbox)
+        self.toolbox_layout.addWidget(analysis_groupbox)
 
         # FINALIZE LAYOUT
-        toolbox_layout.addStretch()
-        toolbox_widget.setLayout(toolbox_layout)
-        self.viewer_widget.setLayout(self.viewer_layout)
-        self.main_layout.addWidget(toolbox_widget)
-        self.main_layout.addWidget(self.tabs, stretch=1)
+        self.toolbox_layout.addStretch()
+        toolbox_widget.setLayout(self.toolbox_layout)
+        viewer_widget.setLayout(self.viewer_layout)
+        self.main_layout.addWidget(toolbox_widget, stretch=1)
+        self.main_layout.addWidget(viewer_widget, stretch=4)
         self.central_widget.setLayout(self.main_layout)
 
         # LINK BUTTON ON CLICK
@@ -617,29 +603,14 @@ class MyApp(QMainWindow):
         self.save_parameters_button.clicked.connect(self.save_run_parameters)
         self.save_pdf_button.clicked.connect(lambda: save_pdf_report(self))
 
-        self.reference_gas_dropdown.currentIndexChanged.connect(self.check_run_parameters)
-        #Store last committed values for each QLineEdit
-        self._last_committed_values = {
-            self.sorbent_mass_input: '',
-            self.reactor_diameter_input: '',
-            self.bulk_density_input: '',
-            self.packing_factor_input: '',
-            self.input_flow_rate_input: '',
-            self.reactor_input_ratio_input: '',
-            self.qms_input_ratio_input: '',
-            self.sorption_start_input: '',
-            self.sorption_end_input: '',
-        }
-        #Connect editingFinished for QLineEdits to custom handler
-        for widget in self._last_committed_values:
-            widget.editingFinished.connect(lambda w=widget: self._on_editing_finished(w))
-
-    def _on_editing_finished(self, widget):
-        current_value = widget.text()
-        last_value = self._last_committed_values.get(widget, None)
-        if current_value != last_value:
-            self._last_committed_values[widget] = current_value
-            self.check_run_parameters()
+    def _on_editing_finished(self, widget_here):
+        for key, state in self.state_text.items(): 
+            widget = self.widget_lookup[key]
+            if widget == widget_here:
+                if widget_here.text() != state:
+                    self.state_text[key] = widget_here.text()
+                    print('setting state', key, ' ', widget_here.text())
+                    self.check_run_parameters()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

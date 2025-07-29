@@ -7,6 +7,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import ast
 from numpy import number, floor, log10
+import pandas as pd
 
 class DataViewer(QMainWindow):
     def __init__(self, analysis):
@@ -82,47 +83,51 @@ class DataViewer(QMainWindow):
     def get_selected_items(self, widget):
         return [item.text() for item in widget.selectedItems() if item.text() != "None"]
     
-    def load_row(self):
-        if self.analysis.loaded_row != '':
-            # Select and enable only the compounds listed in loaded_row['Selected Compounds']
-            selected_compounds = ast.literal_eval(self.analysis.loaded_row.get('Selected Compounds', []))
-            for i in range(self.compound_list.count()):
-                self.compound_list.item(i).setSelected(self.compound_list.item(i).text() in selected_compounds)
-            selected_parameters = ast.literal_eval(self.analysis.loaded_row.get('Selected Parameters', []))
-            for i in range(self.reactor_param_list.count()):
-                self.reactor_param_list.item(i).setSelected(self.reactor_param_list.item(i).text() in selected_parameters)
-            selected_others = ast.literal_eval(self.analysis.loaded_row.get('Selected Others', []))
-            for i in range(self.other_param_list.count()):
-                self.other_param_list.item(i).setSelected(self.other_param_list.item(i).text() in selected_others)
-            scale_run_graph = bool(ast.literal_eval(self.analysis.loaded_row.get('Scale Run Graph', 'False')))
-            self.scaling_checkbox.setChecked(scale_run_graph)
-
-    def update_data(self):
-        # Block signals to avoid recursion when reloading lists
+    def pull_state(self):
+        print('pulling state')
+        #Stop recursive signaling
         self.compound_list.blockSignals(True)
         self.reactor_param_list.blockSignals(True)
         self.other_param_list.blockSignals(True)
-
-         # Only add compounds that are not all NaN
-        for item in self.analysis.compound_list:
-            if self.analysis.mdf[item].notna().any():
-                self.compound_list.addItem(item)
-        self.reactor_param_list.addItems(self.analysis.reactor_parameters)
-        self.other_param_list.addItems(self.analysis.other_parameters)
-
-        # Reload compound list
+        
+        #Clear dropdowns
         self.compound_list.clear()
+        self.reactor_param_list.clear()
+        self.other_param_list.clear()
+
+        #Populate compound list
         for item in self.analysis.compound_list:
             if self.analysis.mdf[item].notna().any():
                 self.compound_list.addItem(item)
 
-        # Reload reactor param list
-        self.reactor_param_list.clear()
+        #Populate reactor param list
         self.reactor_param_list.addItems(self.analysis.reactor_parameters)
 
-        # Reload other param list
-        self.other_param_list.clear()
-        self.other_param_list.addItems(self.analysis.other_parameters)
+        #Populate other param list
+        selectable_cols = []
+        for col in self.analysis.cycle_times_df.columns:
+            if col == 'Cycle':
+                continue
+            if pd.api.types.is_numeric_dtype(self.analysis.cycle_times_df[col])\
+                  or pd.api.types.is_timedelta64_dtype(self.analysis.cycle_times_df[col]):
+                selectable_cols.append(col)
+        self.other_param_list.addItems(selectable_cols)
+
+
+        selected_compounds = self.analysis.state_qlist['Selected Compounds']
+        for i in range(self.compound_list.count()):
+            self.compound_list.item(i).setSelected(\
+                self.compound_list.item(i).text()in selected_compounds)
+        selected_parameters = self.analysis.state_qlist['Selected Parameters']
+        for i in range(self.reactor_param_list.count()):
+            self.reactor_param_list.item(i).setSelected(\
+                self.reactor_param_list.item(i).text() in selected_parameters)
+        selected_others = self.analysis.state_qlist['Selected Others']
+        for i in range(self.other_param_list.count()):
+            self.other_param_list.item(i).setSelected(\
+                self.other_param_list.item(i).text() in selected_others)
+        scale_run_graph = self.analysis.state_other['Scale Run Graph']
+        self.scaling_checkbox.setChecked(scale_run_graph)
 
         # Rebuild scaling factors
         self.scaling_factors = self.calculate_scaling_factors()
@@ -133,7 +138,18 @@ class DataViewer(QMainWindow):
         self.other_param_list.blockSignals(False)
 
 
+    def push_state(self):
+        selected_compounds = [item.text() for item in self.compound_list.selectedItems()]
+        selected_reactor = [item.text() for item in self.reactor_param_list.selectedItems()]
+        selected_other = [item.text() for item in self.other_param_list.selectedItems()]
+        self.analysis.state_qlist['Selected Compounds'] = selected_compounds
+        self.analysis.state_qlist['Selected Parameters'] = selected_reactor
+        self.analysis.state_qlist['Selected Others'] = selected_other
+        self.analysis.state_other['Scale Run Graph'] = self.scaling_checkbox.isChecked()
+
+
     def update_plot(self):
+        self.push_state()
         self.figure.clear()
         ax = self.figure.add_subplot(111)
         use_scaling = self.scaling_checkbox.isChecked()
