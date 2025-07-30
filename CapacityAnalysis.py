@@ -152,86 +152,164 @@ class CapacityAnalysis(QMainWindow):
 
     def cut_start(self):
         """Button functions to trim start of calculation"""
-        cycle_df= self.analysis.cycle_times_df
+        cycle_df= self.cycle_times_df
         try:
-            if 'Sorption Start Time' in cycle_df.columns:
+            if self.sorption_start_override.text() == '':
+                self.start_cuts[self.current_cycle_index] = None
+            else:
                 float_val = float(self.sorption_start_override.text())
-                self.pull_state()
                 start = cycle_df['Start'][self.current_cycle_index]
                 end = cycle_df['End'][self.current_cycle_index]
                 cut_time = start + pd.to_timedelta(float_val, unit='m')
-                self.analysis.cycle_times_df['Sorption Start Time']\
-                    [self.current_cycle_index] = \
-                    float_val if (start <= cut_time <= end) else start
-            else:
-                self.analysis.cycle_times_df['Sorption Start Time'] = 0.0
+                if (start < cut_time < end):
+                    self.start_cuts[self.current_cycle_index] = float_val
+            self.push_state()
+            self.propagate_change()
         except ValueError: #Don't update the dataframe if a nonfloat is entered
             pass
 
     def cut_end(self):
         """Button function to trim end of calculation"""
-        cycle_df= self.analysis.cycle_times_df
+        cycle_df= self.cycle_times_df
         try:
-            if 'Sorption End Time' in cycle_df.columns:
+            if self.sorption_end_override.text() == '':
+                self.end_cuts[self.current_cycle_index] = None
+            else:
                 float_val = float(self.sorption_end_override.text())
-                self.pull_state()
                 start = cycle_df['Start'][self.current_cycle_index]
                 end = cycle_df['End'][self.current_cycle_index]
                 cut_time = start + pd.to_timedelta(float_val, unit='m')
-                self.analysis.cycle_times_df['Sorption End Time']\
-                    [self.current_cycle_index] = \
-                    float_val if (start < cut_time < end) else end
-            else:
-                self.analysis.cycle_times_df['Sorption End Time'] = \
-                (cycle_df['End'] - cycle_df['Start']).dt.total_seconds() / 60
+                if (start < cut_time < end):
+                    self.end_cuts[self.current_cycle_index] = float_val
+            self.push_state()
+            self.propagate_change()
         except ValueError: #Don't update the dataframe if a nonfloat is entered
             pass
 
     def cut_regression_start(self):
-        return
+        cycle_df= self.cycle_times_df
+        try:
+            if self.regression_start_override.text() == '':
+                self.regression_start_cuts[self.current_cycle_index] = None
+            else:
+                float_val = float(self.regression_start_override.text())
+                start = cycle_df['Start'][self.current_cycle_index]
+                end = cycle_df['End'][self.current_cycle_index]
+                cut_time = start + pd.to_timedelta(float_val, unit='m')
+                if (start < cut_time < end):
+                    self.regression_start_cuts[self.current_cycle_index] = float_val
+            self.push_state()
+            self.propagate_change()
+        except ValueError: #Don't update the dataframe if a nonfloat is entered
+            pass
+
     
     def cut_regression_end(self):
+        cycle_df= self.cycle_times_df
+        try:
+            if self.regression_end_override.text() == '':
+                self.regression_end_cuts[self.current_cycle_index] = None
+            else:
+                float_val = float(self.regression_end_override.text())
+                start = cycle_df['Start'][self.current_cycle_index]
+                end = cycle_df['End'][self.current_cycle_index]
+                cut_time = start + pd.to_timedelta(float_val, unit='m')
+                if (start < cut_time < end):
+                    self.regression_end_cuts[self.current_cycle_index] = float_val
+            self.push_state()
+            self.propagate_change()
+        except ValueError: #Don't update the dataframe if a nonfloat is entered
+            pass
         return
+
+    def propagate_change(self):
+        self.pull_state()
+        self.calculate_sorption()
+        self.calculate_kinetics_dry()
+        self.calculate_kinetics_wet()
+        self.update_plots()
 
     def pull_state(self):
         self.cycle_times_df = self.analysis.cycle_times_df
+        self.df = self.analysis.mdf
         number_of_cycles = len(self.cycle_times_df)
-        start_cuts = self.analysis.state_other['Start Cuts']
-        end_cuts = self.analysis.state_other['End Cuts']
-        regression_start_cuts = self.analysis.state_other['Regression Start Cuts']
-        regression_end_cuts = self.analysis.state_other['Regression End Cuts']
+        self.cycle_numbers = self.cycle_times_df['Cycle'].tolist()
+        self.calculate_secondary()
+        if len(self.analysis.state_other['Start Cuts']) != number_of_cycles:
+            self.start_cuts = [None] * number_of_cycles
+            self.end_cuts = [None] * number_of_cycles
+            self.regression_start_cuts = [None] * number_of_cycles
+            self.regression_end_cuts = [None] * number_of_cycles
+        else:
+            self.start_cuts = self.analysis.state_other['Start Cuts']
+            self.end_cuts = self.analysis.state_other['End Cuts']
+            self.regression_start_cuts = self.analysis.state_other['Regression Start Cuts']
+            self.regression_end_cuts = self.analysis.state_other['Regression End Cuts']
 
+        start_times = []
+        end_times = []
+        regression_start_times = []
+        regression_end_times = []
+        regression_start_percent = \
+            float(self.analysis.state_text['Regression Start (%)'])/100
+        regression_end_percent = float(self.analysis.state_text['Regression End (%)'])/100
 
+        for n in self.cycle_numbers:
+            print(n)
+            n = int(n)
+            start_cut = self.cycle_times_df['Start'][n-1]
+            end_cut = self.cycle_times_df['End'][n-1]
+            f = self.df[(self.df.index > start_cut) & (self.df.index < end_cut)]
+            if 'Cycle Identifier' in self.df.columns:
+                f = f[(f['Cycle Identifier'] == 3) & \
+                            (f['No Completed Cycles'] == n)]    
+            regression_start_time_percent = \
+                f[f['yCO2 [%]']/100 > regression_start_percent].index.min()
+            regression_end_time_percent = \
+                f[(f['yCO2 [%]']/100 > regression_end_percent) & \
+                (f.index > regression_start_time_percent)].index.min()
+            
+            if self.start_cuts[n-1] is not None:
+                start_time = self.start_cuts[n-1] 
+            else: start_time = 0
+            if self.end_cuts[n-1] is not None:
+                end_time = self.end_cuts[n-1]
+            else: end_time = (regression_end_time_percent-start_cut)\
+                .total_seconds()/60
+            if self.regression_start_cuts[n-1] is not None:
+                regression_start_time = self.regression_start_cuts[n-1]
+            else: regression_start_time = max((regression_start_time_percent-start_cut)\
+                .total_seconds()/60, start_time)
+            if self.regression_end_cuts[n-1] is not None:
+                regression_end_time = self.regression_end_cuts[n-1]
+            else: regression_end_time = min((regression_end_time_percent-start_cut)\
+                .total_seconds()/60, end_time)
+
+            start_times.append(start_time)
+            end_times.append(end_time)
+            regression_start_times.append(regression_start_time)
+            regression_end_times.append(regression_end_time)
+
+        self.cycle_times_df['Sorption Start Time'] = start_times 
+        self.cycle_times_df['Sorption End Time'] = end_times
+        self.cycle_times_df['Regression Start Time'] = regression_start_times
+        self.cycle_times_df['Regression End Time'] = regression_end_times
+
+    def push_state(self):
         selected_labels = [item.text() for item in self.ax1_param_list.selectedItems()]
-        self.analysis.state_qlist['Selected Compounds'] = selected_labels
-        if len(self.analysis.state_other['Start Cuts']) != len(self.cycle_times_df):
-            empty_array = [None] * len(self.cycle_times_df)
-            self.analysis.state_other['Start Cuts'] = empty_array
-            self.analysis.state_other['End Cuts'] = empty_array
-            self.analysis.state_other['Regression Start Cuts'] = empty_array
-            self.analysis.state_other['Regression End Cuts'] = empty_array
-        self.analysis.state_other['Start Cuts'][self.current_cycle_index] = \
-            self.sorption_start_override.text()
-        self.analysis.state_other['End Cuts'][self.current_cycle_index] = \
-            self.sorption_end_override.text()
-        self.analysis.state_other['Regression Start Cuts'][self.current_cycle_index] = \
-            self.regression_start_override.text()
-        self.analysis.state_other['Regression End Cuts'][self.current_cycle_index] = \
-            self.regression_end_override.text()
-        print('state updated')
-        print(self.analysis.state_other)
+        self.analysis.state_qlist['Cycle Plot Elements'] = selected_labels
+        self.analysis.state_other['Start Cuts'] = self.start_cuts
+        self.analysis.state_other['End Cuts'] = self.end_cuts
+        self.analysis.state_other['Regression Start Cuts'] = self.regression_start_cuts
+        self.analysis.state_other['Regression End Cuts'] =  self.regression_end_cuts
+        self.analysis.cycle_times_df = self.cycle_times_df
 
     #Button function to view previous cycle
     def select_prev_cycle(self):
         if self.current_cycle_index > 0:
             self.current_cycle_index -= 1
             self.cycle_label.setText(\
-                f'{self.cycle_numbers[self.current_cycle_index]}\
-                    /{max(self.cycle_numbers)}')
-            self.sorption_start_override.clear()
-            self.sorption_end_override.clear()
-            self.regression_start_override.clear()
-            self.regression_end_override.clear()
+                f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
             self.update_plots()
 
     #Button function to view next cycle
@@ -239,12 +317,7 @@ class CapacityAnalysis(QMainWindow):
         if self.current_cycle_index < len(self.cycle_numbers) - 1:
             self.current_cycle_index += 1
             self.cycle_label.setText(\
-                f'{self.cycle_numbers[self.current_cycle_index]}\
-                    /{max(self.cycle_numbers)}')
-            self.sorption_start_override.clear()
-            self.sorption_end_override.clear()
-            self.regression_start_override.clear()
-            self.regression_end_override.clear()
+                f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
             self.update_plots()
             
     #Calculate scaling factors for selected columns based on sorption range
@@ -259,9 +332,13 @@ class CapacityAnalysis(QMainWindow):
 
     #Reload graphs on parameter or input change
     def update_plots(self):
+        #Populate text boxes
+        self.sorption_start_override.setText(str(self.start_cuts[self.current_cycle_index]) if self.start_cuts[self.current_cycle_index] is not None else '')
+        self.sorption_end_override.setText(str(self.end_cuts[self.current_cycle_index]) if self.end_cuts[self.current_cycle_index] is not None else '')
+        self.regression_start_override.setText(str(self.regression_start_cuts[self.current_cycle_index]) if self.regression_start_cuts[self.current_cycle_index] is not None else '')
+        self.regression_end_override.setText(str(self.regression_end_cuts[self.current_cycle_index]) if self.regression_end_cuts[self.current_cycle_index] is not None else '')
+
         #Setup
-        self.df = self.analysis.mdf
-        self.cycle_times_df = self.analysis.cycle_times_df
         self.figure1.clear()
 
         ax1 = self.figure1.add_subplot(111)
@@ -313,8 +390,8 @@ class CapacityAnalysis(QMainWindow):
         # cut_time = start + pd.to_timedelta(float_val, unit='m')
         regression_start_rel = self.cycle_times_df['Regression Start Time'][n-1]
         regression_end_rel = self.cycle_times_df['Regression End Time'][n-1]
-        sorption_start_rel = (f_center.index[0] - f.index[0]).total_seconds()/60
-        sorption_end_rel = (f_center.index[-1] - f.index[0]).total_seconds()/60
+        sorption_start_rel = self.cycle_times_df['Sorption Start Time'][n-1]
+        sorption_end_rel = self.cycle_times_df['Sorption End Time'][n-1]
         # Get colors from plotted lines for yCO2 and Residence Time [s]
         yco2_color = None
         residence_time_color = None
@@ -329,10 +406,14 @@ class CapacityAnalysis(QMainWindow):
             residence_time_color = 'red'
 
         ax1.axvline(x=regression_start_rel, linestyle='--',
-                label=f"Regression Start = {self.analysis.state_text['Regression Start (%)']}%",
+                label=f"Regression Start = {self.analysis.state_text['Regression Start (%)']}%"\
+                    if self.regression_start_cuts[self.current_cycle_index] is None else \
+                    f"Regression Start = {self.regression_start_cuts[self.current_cycle_index]}min",
                 color=residence_time_color)
         ax1.axvline(x=regression_end_rel, linestyle='--',
-                label=f"Regression End = {self.analysis.state_text['Regression End (%)']}%",
+                label=f"Regression End = {self.analysis.state_text['Regression End (%)']}%"\
+                    if self.regression_end_cuts[self.current_cycle_index] is None else \
+                    f"Regression End = {self.regression_end_cuts[self.current_cycle_index]}min",
                 color=residence_time_color)
         ax1.axvline(x=sorption_start_rel, linestyle='--',
                 label=f'Sorption Start = {int(sorption_start_rel)}min',
@@ -385,15 +466,10 @@ class CapacityAnalysis(QMainWindow):
     def calculate_secondary(self):
         """Calculate variables which only depend on df"""
         print('calculating secondary')
-        #Refresh dataframes
-        self.df = self.analysis.mdf
-        self.cycle_times_df = self.analysis.cycle_times_df
-        self.df['TimeDiff'] = self.df.index.diff()
-        self.cycle_numbers = self.cycle_times_df['Cycle'].tolist()
-        self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}\
-                                 /{max(self.cycle_numbers)}')
 
-        
+        self.df['TimeDiff'] = self.df.index.diff()
+        self.cycle_label.setText(f'{self.cycle_numbers[self.current_cycle_index]}/{max(self.cycle_numbers)}')
+
         reactor_pressure = 101325 #Pa
         gas_constant_r = 8.3145
         reactor_temp_c = 55
@@ -428,8 +504,7 @@ class CapacityAnalysis(QMainWindow):
               = maximum((co2_input_flow_rate_molar\
                           - self.df['CO2 Partial Flow Rate Out [mol/s]'])\
                               * self.df['TimeDiff'].dt.total_seconds(), 0)
-        self.analysis.mdf = self.df
-        self.analysis.cycle_times_df = self.cycle_times_df
+
         for param in [co2_ref_col, 'yCO2 [%]', '[CO2]', 'ln[CO2]',\
                        'CO2 Partial Flow Rate Out [mol/s]', 'CO2 Absorbed [mol]']:
             if param not in self.analysis.state_qlist['Selected Others']:
@@ -439,21 +514,13 @@ class CapacityAnalysis(QMainWindow):
     def calculate_sorption(self):
         """Calculate variables which rely on df and cycle_times_df"""
 
-        #Refresh dataframes
-        self.df = self.analysis.mdf
-        self.cycle_times_df = self.analysis.cycle_times_df
         #Preliminary calculations
         co2_molar_mass = 44.01
         sorbent_vol = float(self.analysis.state_text['Sorbent Mass [g]'])\
               / float(self.analysis.state_text['Sorbent Bulk Density [g/mL]'])
         sorbent_mass = float(self.analysis.state_text['Sorbent Mass [g]'])
-        regression_start_percent = \
-            float(self.analysis.state_text['Regression Start (%)'])/100
-        regression_end_percent = float(self.analysis.state_text['Regression End (%)'])/100
         
         #Instantiate return lists
-        start_times = []
-        end_times = []
         min_gammas = []
         total_absorbed = []
         duration_seconds = []
@@ -462,25 +529,18 @@ class CapacityAnalysis(QMainWindow):
         for n in self.cycle_numbers:
             #Prep data frame
             f = self.df
+            #If using baldy3 data, further trim set
             if 'Cycle Identifier' in self.df.columns:
                 f = self.df[(self.df['Cycle Identifier'] == 3) & \
                             (self.df['No Completed Cycles'] == n)]
             #Cut the single cycle dataframe based on sorption_start/end_cut
-            # cut_time = start + pd.to_timedelta(float_val, unit='m')
             start_time = self.cycle_times_df['Start'][n-1]
             start_cut = start_time + pd.to_timedelta(\
                 self.cycle_times_df['Sorption Start Time'][n-1],unit='m')
             end_cut = start_time + pd.to_timedelta(\
                 self.cycle_times_df['Sorption End Time'][n-1],unit='m')
             f = f[(f.index > start_cut) & (f.index < end_cut)]
-            regression_start_time = \
-                f[f['yCO2 [%]']/100 > regression_start_percent].index.min()
-            regression_end_time = \
-                f[(f['yCO2 [%]']/100 > regression_end_percent) & \
-                  (f.index > regression_start_time)].index.min()
-            start_times.append((regression_start_time - start_time).total_seconds()/60)
-            end_times.append((regression_end_time - start_time).total_seconds()/60)
-            f_absorbed = f[(f.index > start_cut) & (f.index < regression_end_time)]
+            f_absorbed = f[(f.index > start_cut) & (f.index < end_cut)]
             total_absorbed.append(sum(f_absorbed['CO2 Absorbed [mol]']))
             min_gammas.append(f['yCO2 [%]'][f['yCO2 [%]'] > 0].min()/100)
             duration_seconds.append((end_cut - start_cut).total_seconds())
@@ -493,8 +553,6 @@ class CapacityAnalysis(QMainWindow):
 
         #Push return lists to the cycle times dataframe
         self.cycle_times_df['Sorption Duration'] = sorption_durations
-        self.cycle_times_df['Regression Start Time'] = start_times
-        self.cycle_times_df['Regression End Time'] = end_times
         self.cycle_times_df['Highest Sorption Point'] = min_gammas
         self.cycle_times_df['Experimental CO2absorbed [mol]'] = total_absorbed
         self.cycle_times_df['Experimental CO2absorbed [g]']\
@@ -508,11 +566,7 @@ class CapacityAnalysis(QMainWindow):
               # ABOVE CONSTANT PULLED FROM EXCEL, UNSURE OF ORIGIN
 
     def calculate_kinetics_dry(self):
-        """Uses the dry kinetics model to calculate the Rate Constant K"""
-    
-        #Refresh dataframe
-        self.cycle_times_df = self.analysis.cycle_times_df
-        
+        """Uses the dry kinetics model to calculate the Rate Constant K"""        
         #Define constants 
         reactor_pressure = 101325 #pa
         reactor_temp_c = 55
@@ -563,10 +617,8 @@ class CapacityAnalysis(QMainWindow):
 
     def calculate_kinetics_wet(self):
         """Uses the wet kinetics odel to calculate the Rate Constant K and related"""
-        
-        #Refresh dataframes
-        cycle_times_df = self.analysis.cycle_times_df
-        df = self.analysis.mdf
+        cycle_times_df = self.cycle_times_df
+        df = self.df
 
         #Setup new columns to be populated
         df['Accumulated CO2 Absorbed [mol]'] = nan
@@ -652,19 +704,6 @@ class CapacityAnalysis(QMainWindow):
         self.cycle_times_df['Wet Kinetics Regression R2'] = r2s
         return
 
-    def load_row(self):
-        #DEFUNCT
-        """Reads app save state and adjusts visual elements accordingly"""
-        row = self.analysis.loaded_row
-        if row != '':
-            cycle_plot_elements = ast.literal_eval(row.get('Cycle Plot Elements', []))
-            for i in range(self.ax1_param_list.count()):
-                self.ax1_param_list.item(i).setSelected(\
-                    self.ax1_param_list.item(i).text() in cycle_plot_elements)
-            scale_cycle_graph = bool(ast.literal_eval(\
-                row.get('Scale Cycle Graph', 'False')))
-            self.scaling_checkbox.setChecked(scale_cycle_graph)
-    
     def get_all_figures_for_pdf(self):
         """Return a list of matplotlib Figure objects for all cycles"""
         figures = []

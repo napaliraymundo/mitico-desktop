@@ -216,25 +216,37 @@ class MyApp(QMainWindow):
                             widget.setText(row[key])
                             self.state_text[key] = row[key]
                     for key, _ in self.state_qlist.items():
-                        qlist = self.widget_lookup[key]
-                        qlist.blockSignals(True)
-                        for i in range(qlist.count()):
-                            if qlist.item(i).text() in row[key]:
-                                qlist.item(i).setSelected(True)
-                            else: qlist.item(i).setSelected(False)
-                        self.state_qlist[key] = ast.literal_eval(row[key])
-                        print('resetting state to ', row[key])
-                        qlist.blockSignals(False)
+                        if row[key] != '':
+                            qlist = self.widget_lookup[key]
+                            qlist.blockSignals(True)
+                            for i in range(qlist.count()):
+                                if qlist.item(i).text() in row[key]:
+                                    qlist.item(i).setSelected(True)
+                                else: qlist.item(i).setSelected(False)
+                            self.state_qlist[key] = ast.literal_eval(row[key])
+                            print('resetting state to ', row[key])
+                            qlist.blockSignals(False)
                     if row['Reference Gas'] != '':
-                        self.reference_gas_dropdown.setCurrentText(row['Reference Gas'])
                         self.state_other['Reference Gas'] = row['Reference Gas']
+                        self.reference_gas_dropdown.setCurrentText(row['Reference Gas'])
+                    if row['Scale Run Graph'] != '':
+                        self.state_other["Scale Run Graph"] = ast.literal_eval(row['Scale Run Graph'])
+                    if row['Scale Cycle Graph'] != '':
+                        self.state_other["Scale Cycle Graph"] = ast.literal_eval(row['Scale Cycle Graph'])
+                    if row['Start Cuts'] != '':
+                        self.state_other['Start Cuts'] = ast.literal_eval(row['Start Cuts'])
+                    if row['End Cuts'] != '':
+                        self.state_other['End Cuts'] = ast.literal_eval(row['End Cuts'])
+                    if row['Regression Start Cuts'] != '':
+                        self.state_other['Regression Start Cuts'] = ast.literal_eval(row['Regression Start Cuts'])
+                    if row['Regression End Cuts'] != '':
+                        self.state_other['Regression End Cuts'] = ast.literal_eval(row['Regression End Cuts'])
                     self.parameter_status.setText("Status: App State Loaded")
                     break
                 else: 
                     print('row not found')
                     self.loaded_row = ''
         self.first_load = False
-        print('got to checking')
         self.check_run_parameters()
 
     def save_run_parameters(self):
@@ -369,21 +381,16 @@ class MyApp(QMainWindow):
         print(self.state_qlist)
         print(self.state_other)
         self.tabs.setHidden(False)
-        # self.cycle_instance.pull_state()
-        self.cycle_instance.cut_start()
-        self.cycle_instance.cut_end()
-        self.cycle_instance.cut_regression_start()
-        self.cycle_instance.cut_regression_end()
-        self.cycle_instance.calculate_secondary()
-        self.cycle_instance.calculate_sorption()    
-        self.cycle_instance.calculate_kinetics_wet()
-        self.cycle_instance.calculate_kinetics_dry()
-        self.cycle_instance.update_plots()
+
+        self.cycle_instance.propagate_change()
+
         self.viewer_instance.pull_state()
         self.viewer_instance.update_plot()
+
         self.metrics_instance.pull_state()
         self.metrics_instance.update_table()
         self.metrics_instance.update_plot()
+
         self.raw_data_instance.update_table()
 
 
@@ -551,7 +558,7 @@ class MyApp(QMainWindow):
         run_parameters_layout.addLayout(regression_start_layout)
 
         regression_end_layout = QHBoxLayout()
-        regression_end_label = QLabel("Regression End (%):")
+        regression_end_label = QLabel("Regression and Sorption End (%):")
         regression_end_layout.addWidget(regression_end_label)
         regression_end_layout.addWidget(self.regression_end_input)
         run_parameters_layout.addLayout(regression_end_layout)

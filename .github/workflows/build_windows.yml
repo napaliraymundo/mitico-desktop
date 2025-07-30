@@ -25,23 +25,6 @@ jobs:
           pip install -r requirements.txt
 
       # -------------------------
-      # Variant 1: ONEDIR + ZIP
-      # -------------------------
-      - name: Build with PyInstaller (onedir)
-        run: |
-          pyinstaller --onedir --windowed --icon=app.ico Analysis.py --add-data "run_parameters.csv;."
-
-      - name: Zip ONEDIR build
-        run: |
-          Compress-Archive -Path dist\Analysis\* -DestinationPath analysis-onedir.zip
-
-      - name: Upload ONEDIR zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: analysis-windows-onedir-zip
-          path: analysis-onedir.zip
-
-      # -------------------------
       # Variant 2: ONEFILE EXE
       # -------------------------
       - name: Build with PyInstaller (onefile)
@@ -52,34 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: analysis-windows-onefile
-          path: dist\Analysis.exe
-
-      # -------------------------
-      # Variant 3: SFX .exe
-      # -------------------------
-      - name: Create 7-Zip SFX
-        shell: cmd
-        run: |
-          mkdir sfx
-          xcopy /E /I /Y dist\Analysis sfx\
-          "C:\Program Files\7-Zip\7z.exe" a analysis.7z .\sfx\*
-          copy /b "C:\Program Files\7-Zip\7z.sfx" + .github\config.txt + analysis.7z analysis-sfx.exe
-
-      - name: Upload SFX executable
-        uses: actions/upload-artifact@v4
-        with:
-          name: analysis-windows-sfx
-          path: analysis-sfx.exe
-
-      # -------------------------
-      # Variant 4: DEBUG Onefile
-      # -------------------------
-      - name: Build with PyInstaller (onefile debug)
-        run: |
-          pyinstaller --onefile --windowed --debug=all --icon=app.ico Analysis.py --add-data "run_parameters.csv;." --log-level=DEBUG
-
-      - name: Upload DEBUG .exe
-        uses: actions/upload-artifact@v4
-        with:
-          name: analysis-windows-debug
           path: dist\Analysis.exe
