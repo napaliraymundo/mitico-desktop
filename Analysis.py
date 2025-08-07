@@ -39,9 +39,11 @@ if not os.path.isfile(USER_CSV):
         open(USER_CSV, 'a').close()
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QPushButton, QLabel, QListWidget,
+    QApplication, QMainWindow, QWidget, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QFileDialog, QTabWidget, QGroupBox, QLineEdit, QComboBox
 )
+
+from PyQt5.QtCore import QTimer
 import pandas as pd
 import csv
 from DataViewer import DataViewer
@@ -54,16 +56,13 @@ from RawDataViewer import RawDataViewer
 class MyApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        
         self.mdf = pd.DataFrame()
         self.cycle_times_df = pd.DataFrame()
-        self.reactor_parameters = []
 
         self.status_text = ""
         self.status_error = ""
 
-        # OTHER VARIABLES
-        
+
         self.gas_abbr = {
             "":"",
             "Nitrogen": "N2",
@@ -73,36 +72,7 @@ class MyApp(QMainWindow):
             "Hydrogen": "H2",
             "Carbon dioxide": "CO2",
         }
-
-        #Load state with default app values
-        self.state_text = {
-            "Sorbent Mass [g]": "",
-            "Reactor Diameter [in]": "0.8",
-            "Sorbent Bulk Density [g/mL]": "",
-            "Input Flow Rate [SCCM]": "150",
-            "Packing Factor": "0.55",
-            "Reactor Input Ratio (%)": "10",
-            "QMS Input Ratio (%)": "",
-            "Regression Start (%)": "0.5",
-            "Regression End (%)": "9",
-        }
-        self.state_qlist = {    
-            "Selected Compounds": ['Carbon Dioxide'],
-            "Selected Parameters": [],
-            "Selected Others": [],
-            "Cycle Plot Elements": ['yCO2 [%]'],
-            "Selected Metrics": ['Capacity % to KPI']
-        }
-
-        self.state_other = {
-            "Reference Gas": "Argon",  
-            "Scale Run Graph": True,
-            "Scale Cycle Graph": True,
-            "Start Cuts": [],
-            "End Cuts": [],
-            "Regression Start Cuts": [],
-            "Regression End Cuts": [],
-        }
+        self.load_default_state()
 
         # Create new instances
         self.viewer_instance = DataViewer(self)
@@ -122,11 +92,6 @@ class MyApp(QMainWindow):
             "QMS Input Ratio (%)": self.qms_input_ratio_input,
             "Regression Start (%)": self.regression_start_input,
             "Regression End (%)": self.regression_end_input,
-            "Selected Compounds": self.viewer_instance.compound_list,
-            "Selected Parameters": self.viewer_instance.reactor_param_list,
-            "Selected Others": self.viewer_instance.other_param_list,
-            "Cycle Plot Elements": self.cycle_instance.ax1_param_list,
-            "Selected Metrics": self.metrics_instance.param_list
         }
 
 
@@ -141,10 +106,7 @@ class MyApp(QMainWindow):
             self.state_other['Reference Gas'] = self.reference_gas_dropdown.currentText()
             #Mark that parameters have been changed
             self.parameter_status.setStyleSheet("")
-            self.parameter_status.setText("Status: Run Parameters Changed")
-            # Update label text for reactor input ratio
-            abbr = self.gas_abbr[self.reference_gas_dropdown.currentText()]
-            self.reactor_input_ratio_label.setText(f"Reactor Input Ratio (%)")
+            self.parameter_status.setText("Status: App State Changed (unsaved)")
         
         #Change detection for text inputs
         for name, state in self.state_text.items():
@@ -155,7 +117,7 @@ class MyApp(QMainWindow):
                 #If different than stored value, mark as changed and update value
                 if value != state:
                     self.parameter_status.setStyleSheet("")
-                    self.parameter_status.setText("Status: Run Parameters Changed")
+                    self.parameter_status.setText("Status: App State Changed (unsaved)")
                     self.state_text[name] = value
             except ValueError as e:
                 #Throw error if not a number, disable graphs
@@ -205,11 +167,23 @@ class MyApp(QMainWindow):
             reader = csv.DictReader(file)
             file.seek(0)
             # next(reader)  # skip header
+            for key, default in self.state_text.items(): 
+                        widget = self.widget_lookup[key]
+                        widget.setText(default)
+            if self.state_other['Reference Gas'] in self.compound_list:
+                self.reference_gas_dropdown.setCurrentText(\
+                    self.state_other['Reference Gas']
+                )
+            noneList = [None] * len(self.cycle_times_df)
+            self.viewer_instance.xlim = None
+            self.viewer_instance.ylim = None
+            self.cycle_instance.xlim = noneList
+            self.cycle_instance.ylim = noneList
+            print('set xlim state to default')
+            print('searching rows')
             for row in list(reader)[::-1]:
                 if row["Filename"] == self.filename:
                     print('found row')
-                    self.loaded_row = row
-                    found_row = True
                     for key, _ in self.state_text.items(): 
                         if row[key] != '':
                             widget = self.widget_lookup[key]
@@ -217,36 +191,22 @@ class MyApp(QMainWindow):
                             self.state_text[key] = row[key]
                     for key, _ in self.state_qlist.items():
                         if row[key] != '':
-                            qlist = self.widget_lookup[key]
-                            qlist.blockSignals(True)
-                            for i in range(qlist.count()):
-                                if qlist.item(i).text() in row[key]:
-                                    qlist.item(i).setSelected(True)
-                                else: qlist.item(i).setSelected(False)
                             self.state_qlist[key] = ast.literal_eval(row[key])
                             print('resetting state to ', row[key])
-                            qlist.blockSignals(False)
-                    if row['Reference Gas'] != '':
-                        self.state_other['Reference Gas'] = row['Reference Gas']
-                        self.reference_gas_dropdown.setCurrentText(row['Reference Gas'])
-                    if row['Scale Run Graph'] != '':
-                        self.state_other["Scale Run Graph"] = ast.literal_eval(row['Scale Run Graph'])
-                    if row['Scale Cycle Graph'] != '':
-                        self.state_other["Scale Cycle Graph"] = ast.literal_eval(row['Scale Cycle Graph'])
-                    if row['Start Cuts'] != '':
-                        self.state_other['Start Cuts'] = ast.literal_eval(row['Start Cuts'])
-                    if row['End Cuts'] != '':
-                        self.state_other['End Cuts'] = ast.literal_eval(row['End Cuts'])
-                    if row['Regression Start Cuts'] != '':
-                        self.state_other['Regression Start Cuts'] = ast.literal_eval(row['Regression Start Cuts'])
-                    if row['Regression End Cuts'] != '':
-                        self.state_other['Regression End Cuts'] = ast.literal_eval(row['Regression End Cuts'])
+                    for key, _ in self.state_other.items():
+                        if key != 'Reference Gas':
+                            if row[key] != '':
+                                self.state_other[key] = ast.literal_eval(row[key])
                     self.parameter_status.setText("Status: App State Loaded")
+                    self.reference_gas_dropdown.setCurrentText(row['Reference Gas'])
                     break
                 else: 
                     print('row not found')
-                    self.loaded_row = ''
+                    self.parameter_status.setText("Status: No Save State Found")
+                    self.reference_gas_dropdown.setCurrentText('Argon')
+                
         self.first_load = False
+        print('got to checkign')
         self.check_run_parameters()
 
     def save_run_parameters(self):
@@ -254,6 +214,9 @@ class MyApp(QMainWindow):
         """Save run parameters to run_parameters.csv indexed by filename."""
         csv_file = user_data_path("run_parameters.csv")
         file_name = self.file_label.text()[6:]
+        self.cycle_instance.push_state()  # Ensure cycle state is saved
+        self.metrics_instance.push_state()  # Ensure metrics state is saved
+        self.viewer_instance.push_state()  # Ensure viewer state is saved
         try:
             self.ensure_run_parameters_csv()
             with open(csv_file, mode="a", newline="") as file:
@@ -271,7 +234,9 @@ class MyApp(QMainWindow):
     def load_qms_data(self):
         """Load a QMS CSV file and propagate UI changes based on data"""
         self.tabs.setHidden(True)
+        #Clear text boxess
         self.run_parameters_groupbox.setEnabled(False)
+
         #Find file
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(
@@ -284,6 +249,11 @@ class MyApp(QMainWindow):
         if file_name: #Effectively we want to start from scratch
             self.filepath = file_name
             self.filename = f"{os.path.basename(file_name)}"
+            for widget in self.state_text.keys():
+                self.widget_lookup[widget].setText('')
+            self.reference_gas_dropdown.clear()
+            self.load_default_state()
+            self.cycle_instance.current_cycle_index = 0
             try:
                 self.parser = MassSpecParser(self)
                 self.mdf, self.compound_list, self.cycle_times_df = self.parser.parse()
@@ -302,10 +272,8 @@ class MyApp(QMainWindow):
                 self.baldy2_button.setEnabled(True)
                 self.baldy3_button.setEnabled(True)
                 self.select_button.setText("Load New QMS Data (Restart)")
-                print('loading')
                 self.load_run_parameters()
                 self.save_pdf_button.setEnabled(True)  # Enable PDF button when data is loaded
-                print('loaded')
             except ValueError as e:
                 self.file_label.setStyleSheet("color: red")
                 print('ERROR 2')
@@ -327,9 +295,11 @@ class MyApp(QMainWindow):
         """Load a data folder from the Baldy3 backend and propagate UI changes"""
         self.secondary_status.setStyleSheet("")
         self.secondary_status.setText('Status: Loading')
+        self.tabs.setHidden(True)
         folder_path = QFileDialog.getExistingDirectory(None,"Select Folder","")
         if folder_path:
             try:
+                QApplication.processEvents()
                 #  TODO PASS THE INSTANCE INSTEAD TO BACKEND PARSER
                 backend_parser = BackendParser(
                     self.mdf, self.time_label.text(), self.duration_label.text(), self.file_label.text()[6:], folder_path)
@@ -344,7 +314,9 @@ class MyApp(QMainWindow):
                 print('ERROR 3')
                 print(e)
                 self.secondary_status.setText(f'Status: Folder invalid – Try another Folder')
-        else: self.secondary_status.setText("Status: No Secondary File Loaded")
+        else: 
+            self.secondary_status.setText("Status: No Secondary File Loaded")
+            self.tabs.setHidden(False)
 
     def load_temp_data(self):
         """Load a temperature data CSV from the Baldy2 backend and propagate UI changes"""
@@ -366,7 +338,7 @@ class MyApp(QMainWindow):
                 self.secondary_status.setText('Status: Temp data merge OK')
                 self.baldy2_button.setEnabled(False)
                 self.baldy3_button.setEnabled(False)
-                self.load_run_parameters()
+                self.update_all_calculations()
             except ValueError as e:
                 self.secondary_status.setStyleSheet("color: red")
                 print('ERROR 4')
@@ -377,21 +349,59 @@ class MyApp(QMainWindow):
      
     def update_all_calculations(self):
         print('updating all')
-        print(self.state_text)
-        print(self.state_qlist)
-        print(self.state_other)
-        self.tabs.setHidden(False)
+        self.tabs.setHidden(True)
+        self.old_text = self.secondary_status.text()
+        self.secondary_status.setText('Calculating... please wait')
+        QApplication.processEvents()
+        QTimer.singleShot(100, self._do_calculations)  # 100 ms delay
 
+    def _do_calculations(self):
+        self.cycle_instance.pull_state()
         self.cycle_instance.propagate_change()
-
         self.viewer_instance.pull_state()
         self.viewer_instance.update_plot()
-
         self.metrics_instance.pull_state()
         self.metrics_instance.update_table()
         self.metrics_instance.update_plot()
-
         self.raw_data_instance.update_table()
+        self.tabs.setHidden(False)
+        self.secondary_status.setText(self.old_text)
+
+    def load_default_state(self):
+        #Load state with default app values
+        self.reactor_parameters = []
+        self.state_text = {
+            "Sorbent Mass [g]": "",
+            "Reactor Diameter [in]": "0.8",
+            "Sorbent Bulk Density [g/mL]": "",
+            "Input Flow Rate [SCCM]": "150",
+            "Packing Factor": "0.55",
+            "Reactor Input Ratio (%)": "10",
+            "QMS Input Ratio (%)": "",
+            "Regression Start (%)": "0.5",
+            "Regression End (%)": "9",
+        }
+        self.state_qlist = {    
+            "Selected Compounds": ['Carbon dioxide'],
+            "Selected Parameters": [],
+            "Cycle Parameters": [],
+            "Cycle Plot Elements": ['yCO2 [%]'],
+            "Selected Metrics": ['Capacity % to KPI']
+        }
+
+        self.state_other = {
+            "Reference Gas": "Argon",  
+            "Scale Run Graph": True,
+            "Scale Cycle Graph": True,
+            "Start Cuts": [],
+            "End Cuts": [],
+            "Regression Start Cuts": [],
+            "Regression End Cuts": [],
+            "Run Graph Xlim": None,
+            "Run Graph Ylim": None,
+            "Cycle Graph Xlim": [None],
+            "Cycle Graph Ylim": [None]
+         }
 
 
     def build_layout(self):
@@ -429,10 +439,6 @@ class MyApp(QMainWindow):
         qms_groupbox_layout.addWidget(self.time_label)
         qms_groupbox_layout.addWidget(self.duration_label)
 
-        qms_groupbox = QGroupBox("QMS File Management")
-        qms_groupbox.setLayout(qms_groupbox_layout)
-        self.toolbox_layout.addWidget(qms_groupbox)
-
         # LOAD OTHER DATA SECTION
         self.baldy3_button = QPushButton("Baldy3: Load Data Folder")
         self.baldy3_button.setEnabled(False)
@@ -441,16 +447,13 @@ class MyApp(QMainWindow):
         self.secondary_status = QLabel("Status: Waiting for QMS data load")
         self.secondary_status.setEnabled(False)
 
-        sensor_groupbox = QGroupBox("Secondary File Management")
-        sensor_groupbox_layout = QVBoxLayout()
-        sensor_groupbox_layout.setSpacing(8)
-        sensor_groupbox_layout.setContentsMargins(4, 4, 4, 4)
-        sensor_groupbox_layout.addWidget(self.baldy3_button)
-        sensor_groupbox_layout.addWidget(self.baldy2_button)
-        sensor_groupbox_layout.addWidget(self.secondary_status)
+        qms_groupbox_layout.addWidget(self.baldy3_button)
+        qms_groupbox_layout.addWidget(self.baldy2_button)
+        qms_groupbox_layout.addWidget(self.secondary_status)
 
-        sensor_groupbox.setLayout(sensor_groupbox_layout)
-        self.toolbox_layout.addWidget(sensor_groupbox)
+        qms_groupbox = QGroupBox("File Management")
+        qms_groupbox.setLayout(qms_groupbox_layout)
+        self.toolbox_layout.addWidget(qms_groupbox)
         
 
         # RUN PARAMETERS SECTION
@@ -616,7 +619,7 @@ class MyApp(QMainWindow):
             if widget == widget_here:
                 if widget_here.text() != state:
                     self.state_text[key] = widget_here.text()
-                    print('setting state', key, ' ', widget_here.text())
+                    self.parameter_status.setText("Status: App State Changed (unsaved)")
                     self.check_run_parameters()
 
 if __name__ == "__main__":

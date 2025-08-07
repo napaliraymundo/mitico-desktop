@@ -13,6 +13,8 @@ class DataViewer(QMainWindow):
     def __init__(self, analysis):
         super().__init__()
         self.analysis = analysis
+        self.xlim = None
+        self.ylim = None
 
         self.setWindowTitle("Graph Run")
         screen_geometry = QApplication.desktop().screenGeometry()
@@ -31,6 +33,9 @@ class DataViewer(QMainWindow):
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        home_action = self.toolbar.actions()[0]
+        home_action.triggered.disconnect()
+        home_action.triggered.connect(self.on_home_clicked)
 
         plot_panel.addWidget(self.toolbar)
         plot_panel.addWidget(self.canvas)
@@ -52,11 +57,6 @@ class DataViewer(QMainWindow):
         control_panel.addWidget(QLabel("Reactor Parameters"))
         control_panel.addWidget(self.reactor_param_list)
 
-        self.other_param_list = QListWidget()
-        self.other_param_list.setSelectionMode(QListWidget.MultiSelection)
-        control_panel.addWidget(QLabel("Other Parameters"))
-        control_panel.addWidget(self.other_param_list)
-
         self.scaling_checkbox = QPushButton("Apply Scaling Factors")
         self.scaling_checkbox.setCheckable(True)
         self.scaling_checkbox.setChecked(True)
@@ -69,7 +69,6 @@ class DataViewer(QMainWindow):
         # Trigger plot updates
         self.compound_list.itemSelectionChanged.connect(self.update_plot)
         self.reactor_param_list.itemSelectionChanged.connect(self.update_plot)
-        self.other_param_list.itemSelectionChanged.connect(self.update_plot)
 
     def calculate_scaling_factors(self):
         # Only describe numeric columns
@@ -88,12 +87,10 @@ class DataViewer(QMainWindow):
         #Stop recursive signaling
         self.compound_list.blockSignals(True)
         self.reactor_param_list.blockSignals(True)
-        self.other_param_list.blockSignals(True)
         
         #Clear dropdowns
         self.compound_list.clear()
         self.reactor_param_list.clear()
-        self.other_param_list.clear()
 
         #Populate compound list
         for item in self.analysis.compound_list:
@@ -103,17 +100,7 @@ class DataViewer(QMainWindow):
         #Populate reactor param list
         self.reactor_param_list.addItems(self.analysis.reactor_parameters)
 
-        #Populate other param list
-        selectable_cols = []
-        for col in self.analysis.cycle_times_df.columns:
-            if col == 'Cycle':
-                continue
-            if pd.api.types.is_numeric_dtype(self.analysis.cycle_times_df[col])\
-                  or pd.api.types.is_timedelta64_dtype(self.analysis.cycle_times_df[col]):
-                selectable_cols.append(col)
-        self.other_param_list.addItems(selectable_cols)
-
-
+        #Set selected items based on saved state
         selected_compounds = self.analysis.state_qlist['Selected Compounds']
         for i in range(self.compound_list.count()):
             self.compound_list.item(i).setSelected(\
@@ -122,42 +109,47 @@ class DataViewer(QMainWindow):
         for i in range(self.reactor_param_list.count()):
             self.reactor_param_list.item(i).setSelected(\
                 self.reactor_param_list.item(i).text() in selected_parameters)
-        selected_others = self.analysis.state_qlist['Selected Others']
-        for i in range(self.other_param_list.count()):
-            self.other_param_list.item(i).setSelected(\
-                self.other_param_list.item(i).text() in selected_others)
+            
+        # Set scaling checkbox state
         scale_run_graph = self.analysis.state_other['Scale Run Graph']
         self.scaling_checkbox.setChecked(scale_run_graph)
 
         # Rebuild scaling factors
         self.scaling_factors = self.calculate_scaling_factors()
 
-        # Re-enable signals
+        # Pull lim state
+        self.xlim = self.analysis.state_other['Run Graph Xlim']
+        self.ylim = self.analysis.state_other['Run Graph Ylim']
+
+        # Done setting state, re-enable signals
         self.compound_list.blockSignals(False)
         self.reactor_param_list.blockSignals(False)
-        self.other_param_list.blockSignals(False)
-
 
     def push_state(self):
         selected_compounds = [item.text() for item in self.compound_list.selectedItems()]
         selected_reactor = [item.text() for item in self.reactor_param_list.selectedItems()]
-        selected_other = [item.text() for item in self.other_param_list.selectedItems()]
         self.analysis.state_qlist['Selected Compounds'] = selected_compounds
         self.analysis.state_qlist['Selected Parameters'] = selected_reactor
-        self.analysis.state_qlist['Selected Others'] = selected_other
         self.analysis.state_other['Scale Run Graph'] = self.scaling_checkbox.isChecked()
-
+        try:
+            self.analysis.state_other['Run Graph Xlim'] = \
+                tuple(float(x) for x in self.ax.get_xlim())
+            self.analysis.state_other['Run Graph Ylim'] = \
+                tuple(float(y) for y in self.ax.get_ylim())
+        except Exception as e:
+            print(f"Error saving graph limits: {e}")
 
     def update_plot(self):
+        if hasattr(self, 'ax'):
+            temp_xlim = self.ax.get_xlim()
         self.push_state()
         self.figure.clear()
-        ax = self.figure.add_subplot(111)
+        self.ax = self.figure.add_subplot(111)
         use_scaling = self.scaling_checkbox.isChecked()
 
         selected_compounds = self.get_selected_items(self.compound_list)
         selected_reactor = self.get_selected_items(self.reactor_param_list)
-        selected_other = self.get_selected_items(self.other_param_list)
-        all_selected = selected_compounds + selected_reactor + selected_other
+        all_selected = selected_compounds + selected_reactor
 
         for entry in all_selected:
             if entry in self.analysis.mdf.columns:
@@ -165,22 +157,41 @@ class DataViewer(QMainWindow):
                     scaled_data = self.analysis.mdf[entry] / self.scaling_factors[entry]
                     label = f"{entry} / {self.scaling_factors[entry]:.1e}"
                     index = self.analysis.mdf.index
-                    ax.plot((index - index[0]).total_seconds()/60, scaled_data, label=label)
+                    self.ax.plot((index - index[0]).total_seconds()/60, scaled_data, label=label)
                 else:
                     index = self.analysis.mdf.index
-                    ax.plot((index - index[0]).total_seconds()/60, self.analysis.mdf[entry], label=entry)
+                    self.ax.plot((index - index[0]).total_seconds()/60, self.analysis.mdf[entry], label=entry)
 
         # Set white background for axes and figure
-        ax.set_facecolor("white")
+        self.ax.set_facecolor("white")
         self.figure.set_facecolor("white")
 
         # Add axis labels and title
-        ax.set_xlabel("Elapsed Time (min)")
-        ax.set_ylabel("Concentration")
+        self.ax.set_xlabel("Elapsed Time (min)")
+        self.ax.set_ylabel("Concentration")
 
         # Embedded title and label
-        ax.legend()
-        ax.grid(True, color="gray", linestyle="--")
+        self.ax.legend()
+        self.ax.grid(True, color="gray", linestyle="--")
 
         self.figure.tight_layout(pad=1)
+
+        # Set x and y limits if they exist in the state
+        self.canvas.draw()
+
+        # A different param has been selected; rescale y only
+        if 'temp_xlim' in locals():
+            self.ax.set_xlim(temp_xlim)
+            self.ax.autoscale(axis='y')
+
+        # Only runs once after state is pulled
+        if self.xlim is not None:
+            self.ax.set_xlim(self.xlim)
+            self.ax.set_ylim(self.ylim)
+            self.xlim = None
+            self.ylim = None
+        self.canvas.draw()
+
+    def on_home_clicked(self):
+        self.ax.autoscale()
         self.canvas.draw()

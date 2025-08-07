@@ -192,8 +192,8 @@ def save_pdf_report(analysis):
         ("Reference Gas", analysis.reference_gas_dropdown.currentText()),
         ("Reactor Input Ratio (%)", analysis.reactor_input_ratio_input.text()),
         ("QMS Input Ratio (%)", analysis.qms_input_ratio_input.text()),
-        ("Sorption Start (%)", analysis.sorption_start_input.text()),
-        ("Sorption End (%)", analysis.sorption_end_input.text()),
+        ("Sorption Start (%)", analysis.regression_start_input.text()),
+        ("Sorption End (%)", analysis.regression_end_input.text()),
     ]
     param_table_data = [["Parameter", "Value"]] + [[k, v] for k, v in param_map]
     param_table = Table(param_table_data, hAlign='LEFT', colWidths=[160, 80])
